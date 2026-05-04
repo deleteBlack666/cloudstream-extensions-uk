@@ -11,17 +11,20 @@ import com.lagradost.models.*
 import java.net.URLEncoder
 
 class AnimeONProvider : MainAPI() {
+
     override var mainUrl = "https://animeon.club"
     override var name = "AnimeON"
     override val hasMainPage = true
     override var lang = "uk"
     override val hasQuickSearch = true
     override val hasDownloadSupport = true
+
     override val supportedTypes = setOf(TvType.Anime, TvType.AnimeMovie, TvType.OVA)
 
     private val apiUrl = "$mainUrl/api/anime"
     private val posterApi = "$mainUrl/api/uploads/images/%s"
     private val searchApi = "$apiUrl/search?text="
+
     private val fileRegex = "file\\s*:\\s*[\"']([^\",']+?)[\"']".toRegex()
     private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
@@ -41,23 +44,17 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
-    // Функція для конвертації ID з будь-якого типу в Int
-    private fun anyToInt(value: Any?): Int? {
-        return when (value) {
-            is Int -> value
-            is Double -> value.toInt()
-            is String -> value.toIntOrNull()
-            else -> null
-        }
+    private fun anyToInt(value: Any?): Int? = when (value) {
+        is Int -> value
+        is Double -> value.toInt()
+        is String -> value.toIntOrNull()
+        else -> null
     }
 
-    // --- Основні функції (головна сторінка, пошук, завантаження, посилання) ---
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         if (!request.data.contains("pageIndex") && page != 1) return newHomePageResponse(emptyList())
         val jsonText = fetchJsonOrNull(request.data.format(page)) ?: return newHomePageResponse(request.name, emptyList())
-        
         val homeList = try {
-            // Спроба 1: Новий формат (поле "results")
             val model = Gson().fromJson(jsonText, NewAnimeModel::class.java)
             model.results?.mapNotNull { result ->
                 result?.let {
@@ -68,7 +65,6 @@ class AnimeONProvider : MainAPI() {
             } ?: emptyList()
         } catch (e: Exception) {
             try {
-                // Спроба 2: Старий формат (масив)
                 val arrayType = object : TypeToken<Array<AnimeModel>>() {}.type
                 val items: Array<AnimeModel> = Gson().fromJson(jsonText, arrayType)
                 items.map { item ->
@@ -102,9 +98,9 @@ class AnimeONProvider : MainAPI() {
         val animeInfo = try { Gson().fromJson(jsonText, AnimeInfoModel::class.java) } catch (e: Exception) { throw Exception("Помилка парсингу JSON") }
         val animeId = animeInfo.id
 
-        val episodes = mutableListOf<Episode>()
-        
-        // --- Отримання списку серій ---
+        // 🔧 ВАЖЛИВО: явно вказуємо Episode з CloudStream, щоб уникнути конфлікту з models.Episode
+        val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
+
         val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId")
         if (fundubsJson != null) {
             try {
@@ -157,20 +153,23 @@ class AnimeONProvider : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
         val dataList = data.split(",")
         if (dataList.size < 2) return false
         val animeId = dataList[0].trim().toIntOrNull() ?: return false
         val episodeNum = dataList[1].trim().toIntOrNull() ?: return false
 
-        // Отримуємо fundubs, щоб дізнатися playerId та fundubId
         val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId") ?: return false
         val fundubsModel = try { Gson().fromJson(fundubsJson, FundubsModel::class.java) } catch (e: Exception) { return false }
         val fundub = fundubsModel.fundubs?.firstOrNull() ?: return false
         val player = fundub.player.firstOrNull() ?: return false
         val fundubId = fundub.fundub.id
 
-        // Отримуємо URL відео для конкретної серії
         val videoInfoUrl = "$apiUrl/player/$animeId/${player.id}/$fundubId?episode=$episodeNum"
         val videoInfoJson = fetchJsonOrNull(videoInfoUrl) ?: return false
         val videoUrlData = try { Gson().fromJson(videoInfoJson, FundubVideoUrl::class.java) } catch (e: Exception) { return false }
