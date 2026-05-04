@@ -24,7 +24,7 @@ class AnimeInfoModel (
     @SerializedName("status" ) var status : String,
     @SerializedName("genres" ) var genres : List<Genres>,
     @SerializedName("image" ) var image : Image,
-    @SerializedName("slug" ) var slug : String? = null   // <-- ДОДАЙТЕ ЦЕЙ РЯДОК
+    @SerializedName("slug" ) var slug : String? = null
 )
 
 data class Genres (
