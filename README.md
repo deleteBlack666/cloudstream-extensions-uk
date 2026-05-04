@@ -20,13 +20,8 @@
 ## ⚙️ Інсталяція
 Скопіюйте посилання нижче і перейдіть в Додаток -> Параметри -> Розширення -> Додати репозиторій
 ```
-https://raw.githubusercontent.com/CakesTwix/cloudstream-extensions-uk/master/repo.json
-```
-
-<!-- Support -->
-## ✅ Підтримка
-  - [Fediverse](https://pl.m0e.space/mangane/@CakesTwix) aka @CakesTwix@shkey.cakestwix.com
-  - [Matrix-чат](https://matrix.to/#/#cakestwix:matrix.org)
+https://raw.githubusercontent.com/deleteBlack666/cloudstream-extensions-uk/master/repo.json
+...
 
 <!-- Contributing -->
 ## 💖 Зробити внесок
@@ -35,11 +30,3 @@ https://raw.githubusercontent.com/CakesTwix/cloudstream-extensions-uk/master/rep
 ## 🛠 Збірка
   - Windows: `.\gradlew.bat ExampleProvider:make` або `.\gradlew.bat ExampleProvider:deployWithAdb`
   - Linux & Mac: `./gradlew ExampleProvider:make` або `./gradlew ExampleProvider:deployWithAdb`
-
-<!-- Developers -->
-## ⭐️ Розробники
-  - [@CakesTwix](https://www.github.com/CakesTwix)
-
-<p align="center">
-	<br><a href="https://discord.gg/5Hus6fM"><img src="https://invidget.switchblade.xyz/5Hus6fM"/></a>
-</p>
