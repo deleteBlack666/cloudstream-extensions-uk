@@ -9,6 +9,16 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.models.*
 
+// Тимчасові data класи для парсингу, якщо їх немає в моделях
+data class AnimeResultItem(
+    val id: Int,
+    val titleUa: String,
+    val image: ImageInfo?
+)
+data class ImageInfo(
+    val preview: String
+)
+
 class AnimeONProvider : MainAPI() {
 
     override var mainUrl = "https://animeon.club"
@@ -63,27 +73,28 @@ class AnimeONProvider : MainAPI() {
         val jsonText = fetchJsonOrNull(url) ?: return newHomePageResponse(request.name, emptyList())
         
         val homeList = try {
-            // Спроба розпарсити як масив
-            if (jsonText.trimStart().startsWith("[")) {
-                val type = object : TypeToken<Array<NewAnimeResult>>() {}.type
-                val list: Array<NewAnimeResult> = Gson().fromJson(jsonText, type)
-                list.mapNotNull { result ->
-                    newAnimeSearchResponse(result.titleUa, "anime/${result.id}", TvType.Anime) {
-                        this.posterUrl = posterApi.format(result.image?.preview ?: "")
+            // Спроба як об'єкт NewAnimeModel (з полем results)
+            val model = Gson().fromJson(jsonText, NewAnimeModel::class.java)
+            model.results?.mapNotNull { result ->
+                result?.let {
+                    newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
+                        this.posterUrl = posterApi.format(it.image?.preview ?: "")
                     }
                 }
-            } else {
-                val parsed = Gson().fromJson(jsonText, NewAnimeModel::class.java)
-                parsed.results?.mapNotNull { result ->
-                    result?.let {
-                        newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
-                            this.posterUrl = posterApi.format(it.image?.preview ?: "")
-                        }
-                    }
-                } ?: emptyList()
-            }
+            } ?: emptyList()
         } catch (e: Exception) {
-            emptyList()
+            // Якщо не вдалося, спробуємо як масив
+            try {
+                val arrayType = object : TypeToken<Array<AnimeResultItem>>() {}.type
+                val items: Array<AnimeResultItem> = Gson().fromJson(jsonText, arrayType)
+                items.map { item ->
+                    newAnimeSearchResponse(item.titleUa, "anime/${item.id}", TvType.Anime) {
+                        this.posterUrl = posterApi.format(item.image?.preview ?: "")
+                    }
+                }
+            } catch (e2: Exception) {
+                emptyList()
+            }
         }
 
         return newHomePageResponse(request.name, homeList)
@@ -167,7 +178,7 @@ class AnimeONProvider : MainAPI() {
                     }
                 }
             } catch (e: Exception) {
-                // Помилка отримання серій – просто продовжуємо без них
+                // Ігноруємо помилки отримання серій
             }
         }
 
