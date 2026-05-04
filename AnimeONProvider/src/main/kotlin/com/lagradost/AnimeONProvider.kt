@@ -9,9 +9,6 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.models.*
 
-data class TempAnimeItem(val id: Int, val titleUa: String, val image: TempImage?)
-data class TempImage(val preview: String)
-
 class AnimeONProvider : MainAPI() {
 
     override var mainUrl = "https://animeon.club"
@@ -33,8 +30,12 @@ class AnimeONProvider : MainAPI() {
     override val mainPage = mainPageOf(
         "$apiUrl/popular" to "Популярне",
         "$apiUrl/seasons" to "Аніме поточного сезону",
-        "$apiUrl?pageSize=24&pageIndex=%d" to "Нове аніме на сайті"
+        "$apiUrl?pageSize=24&pageIndex=%d" to "Нове"
     )
+
+    // Тимчасові класи для головної сторінки (якщо старі моделі не працюють)
+    data class TempAnimeItem(val id: Int, val titleUa: String, val image: TempImage?)
+    data class TempImage(val preview: String)
 
     private suspend fun fetchJsonOrNull(url: String): String? {
         return try {
@@ -55,6 +56,7 @@ class AnimeONProvider : MainAPI() {
         val url = request.data.format(page)
         val json = fetchJsonOrNull(url) ?: return newHomePageResponse(request.name, emptyList())
         val list = try {
+            // Спроба як об'єкт NewAnimeModel (якщо є)
             val model = Gson().fromJson(json, NewAnimeModel::class.java)
             model.results?.mapNotNull { it?.let { r ->
                 newAnimeSearchResponse(r.titleUa, "anime/${r.id}", TvType.Anime) {
@@ -63,6 +65,7 @@ class AnimeONProvider : MainAPI() {
             } } ?: emptyList()
         } catch (e: Exception) {
             try {
+                // Спроба як масив
                 val type = object : TypeToken<Array<TempAnimeItem>>() {}.type
                 Gson().fromJson<Array<TempAnimeItem>>(json, type).map { item ->
                     newAnimeSearchResponse(item.titleUa, "anime/${item.id}", TvType.Anime) {
@@ -101,41 +104,47 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) {
             throw Exception("JSON parse error")
         }
-        val id = anime.id ?: throw Exception("Anime ID missing")
+        val animeId = anime.id ?: throw Exception("Anime ID missing")
+
+        // ---- Отримуємо переклади (translations) замість fundubs ----
+        val translationsUrl = "$mainUrl/api/player/translations/$animeId"
+        val translationsJson = fetchJsonOrNull(translationsUrl) ?: throw Exception("No translations")
+        val translationsResponse = try {
+            Gson().fromJson(translationsJson, TranslationResponse::class.java)
+        } catch (e: Exception) {
+            throw Exception("Translations parse error")
+        }
 
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
-        val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$id")
-        
-        if (fundubsJson != null) {
-            try {
-                val fundubsModel = Gson().fromJson(fundubsJson, FundubsModel::class.java)
-                val fundubs = fundubsModel.fundubs ?: emptyList()
-                for (dub in fundubs) {
-                    val players = dub.player ?: emptyList()
-                    if (players.isNotEmpty()) {
-                        val player = players.first()
-                        val fundubId = dub.fundub?.id
-                        if (fundubId != null) {
-                            val epUrl = "$mainUrl/api/player/episodes/$id?playerId=${player.id}&fundubId=$fundubId"
-                            val epJson = fetchJsonOrNull(epUrl)
-                            if (epJson != null) {
-                                val epData = Gson().fromJson(epJson, PlayerEpisodes::class.java)
-                                val eps = epData.episodes ?: emptyList()
-                                eps.forEach { ep ->
-                                    episodes.add(newEpisode("$id, ${ep.episode}") {
-                                        name = "Епізод ${ep.episode}"
-                                        posterUrl = ep.poster
-                                        this.episode = ep.episode
-                                        data = "$id, ${ep.episode}"
-                                    })
-                                }
-                                if (episodes.isNotEmpty()) break
-                            }
-                        }
+        // Беремо перший переклад, який має хоча б одного плеєра
+        val translation = translationsResponse.translations.firstOrNull { it.player.isNotEmpty() }
+            ?: throw Exception("No translation with player")
+
+        // Для кожного плеєра (можна взяти перший, або всі – але зазвичай перший)
+        val player = translation.player.firstOrNull() ?: throw Exception("No player")
+        val playerId = player.id
+        val translationId = translation.id
+
+        // Отримуємо серії / сезони
+        val episodesUrl = "$mainUrl/api/player/episodes?playerId=$playerId&translationId=$translationId"
+        val episodesJson = fetchJsonOrNull(episodesUrl) ?: throw Exception("No episodes data")
+        val playerJson = try {
+            Gson().fromJson(episodesJson, PlayerJson::class.java)
+        } catch (e: Exception) {
+            throw Exception("Episodes parse error")
+        }
+
+        // Проходимо по сезонах та епізодах
+        playerJson.folder.forEachIndexed { seasonIndex, season ->
+            season.folder.forEachIndexed { epIndex, episode ->
+                episodes.add(
+                    newEpisode("$animeId|$playerId|$translationId|$seasonIndex|$epIndex") {
+                        name = "${season.title} - Серія ${episode.title}"
+                        posterUrl = episode.poster
+                        this.episode = epIndex + 1
+                        data = episode.file // пряме посилання на відео
                     }
-                }
-            } catch (e: Exception) {
-                // ignore
+                )
             }
         }
 
@@ -151,7 +160,7 @@ class AnimeONProvider : MainAPI() {
             else -> TvType.Anime
         }
 
-        return newAnimeLoadResponse(anime.titleUa ?: "Без назви", "$mainUrl/anime/$id", tvType) {
+        return newAnimeLoadResponse(anime.titleUa ?: "Без назви", "$mainUrl/anime/$animeId", tvType) {
             posterUrl = posterApi.format(anime.image?.preview ?: "")
             engName = anime.titleEn
             tags = anime.genres?.mapNotNull { it?.nameUa } ?: emptyList()
@@ -172,38 +181,49 @@ class AnimeONProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val parts = data.split(", ")
-        if (parts.size < 2) return false
-        val id = parts[0]
-        val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$id") ?: return false
-        val fundubs = try {
-            Gson().fromJson(fundubsJson, FundubsModel::class.java).fundubs ?: emptyList()
-        } catch (e: Exception) {
-            return false
-        }
-        var success = false
-        for (dub in fundubs) {
-            val player = dub.player?.firstOrNull()
-            val fundub = dub.fundub
-            if (player != null && fundub != null) {
-                val videoUrl = app.get(
-                    "$apiUrl/player/$id/${player.id}/${fundub.id}",
-                    headers = mapOf("Referer" to mainUrl, "User-Agent" to userAgent)
-                ).parsedSafe<FundubVideoUrl>()?.videoUrl
-                if (!videoUrl.isNullOrEmpty()) {
-                    val m3u = getM3U(videoUrl)
-                    if (m3u.isNotEmpty()) {
-                        M3u8Helper.generateM3u8("${fundub.name} (${player.name})", m3u, mainUrl)
-                            .dropLast(1).forEach(callback)
-                        success = true
-                    }
+        // data містить або episode.file (пряме посилання), або складений ключ
+        if (data.startsWith("http")) {
+            // Пряме посилання на відео (наприклад, .m3u8)
+            val m3uUrl = getM3U(data) // або одразу data, якщо це m3u8
+            if (m3uUrl.isNotEmpty()) {
+                M3u8Helper.generateM3u8("AnimeON", m3uUrl, mainUrl).dropLast(1).forEach(callback)
+                return true
+            }
+        } else {
+            // Якщо зберігали складений ключ (наприклад, "animeId|playerId|translationId|seasonIndex|epIndex")
+            val parts = data.split("|")
+            if (parts.size == 5) {
+                val animeId = parts[0]
+                val playerId = parts[1]
+                val translationId = parts[2]
+                val seasonIndex = parts[3].toIntOrNull() ?: return false
+                val epIndex = parts[4].toIntOrNull() ?: return false
+
+                // Отримуємо список серій знову (або краще кешувати, але для простоти знову завантажимо)
+                val episodesUrl = "$mainUrl/api/player/episodes?playerId=$playerId&translationId=$translationId"
+                val episodesJson = fetchJsonOrNull(episodesUrl) ?: return false
+                val playerJson = try {
+                    Gson().fromJson(episodesJson, PlayerJson::class.java)
+                } catch (e: Exception) {
+                    return false
+                }
+                val season = playerJson.folder.getOrNull(seasonIndex)
+                val episode = season?.folder?.getOrNull(epIndex)
+                val videoUrl = episode?.file ?: return false
+                val m3uUrl = getM3U(videoUrl)
+                if (m3uUrl.isNotEmpty()) {
+                    M3u8Helper.generateM3u8("AnimeON", m3uUrl, mainUrl).dropLast(1).forEach(callback)
+                    return true
                 }
             }
         }
-        return success
+        return false
     }
 
     private suspend fun getM3U(url: String): String {
+        // Якщо url вже є .m3u8, повертаємо його
+        if (url.endsWith(".m3u8") || url.contains(".m3u8?")) return url
+        // Інакше шукаємо file: в script
         val html = app.get(url, headers = mapOf("Referer" to mainUrl, "User-Agent" to userAgent)).document.select("script").html()
         return if (html.contains("cloudflare", ignoreCase = true)) "" else fileRegex.find(html)?.groupValues?.get(1) ?: ""
     }
