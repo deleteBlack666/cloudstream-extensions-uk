@@ -13,7 +13,7 @@ import java.net.URLEncoder
 class AnimeONProvider : MainAPI() {
 
     override var mainUrl = "https://animeon.club"
-    override var name = "AnimeON (HTML)"
+    override var name = "AnimeON"
     override val hasMainPage = true
     override var lang = "uk"
     override val hasQuickSearch = true
@@ -41,13 +41,6 @@ class AnimeONProvider : MainAPI() {
                 response.contains("cf-browser-verification", ignoreCase = true) ||
                 (!response.trimStart().startsWith("{") && !response.trimStart().startsWith("["))
             ) null else response
-        } catch (e: Exception) { null }
-    }
-
-    // Функція для отримання HTML сторінки
-    private suspend fun fetchHtml(url: String): String? {
-        return try {
-            app.get(url, headers = mapOf("Referer" to mainUrl, "User-Agent" to userAgent)).text
         } catch (e: Exception) { null }
     }
 
@@ -93,85 +86,41 @@ class AnimeONProvider : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse {
-        // Отримуємо інформацію про аніме через API (без змін)
         val apiUrlPath = url.replace("/anime/", "/api/anime/")
         val jsonText = fetchJsonOrNull(apiUrlPath) ?: throw Exception("Не вдалося завантажити інформацію про аніме")
         val animeInfo = try { Gson().fromJson(jsonText, AnimeInfoModel::class.java) } catch (e: Exception) { throw Exception("Помилка парсингу JSON") }
         val animeId = animeInfo.id
 
-        // --- Отримуємо список епізодів через HTML ---
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
-        val htmlDoc = app.get(url).document   // Використовуємо JSoup для зручного парсингу
-
-        // Намагаємося знайти всі посилання на епізоди
-        // Поширені варіанти: 
-        // 1. Посилання, що містять "/watch/" або "/episode/"
-        // 2. Елементи з класами, що містять "episode", "series", "video"
-        var episodeLinks = htmlDoc.select("a[href*='/watch/'], a[href*='/episode/'], a[href*='/ep/']")
-        if (episodeLinks.isEmpty()) {
-            episodeLinks = htmlDoc.select(".episode a, .series-item a, .episodes-list a, .video-item a")
-        }
-        if (episodeLinks.isEmpty()) {
-            // Якщо не знайшли, шукаємо всі посилання, що ведуть на числові ID (підозрілі на епізоди)
-            episodeLinks = htmlDoc.select("a[href]").filter { 
-                val href = it.attr("href")
-                href.matches(Regex(".*/\\d+$")) && it.text().matches(Regex(".*\\d+.*"))
-            }
-        }
-
-        // Якщо знайшли епізоди, додаємо їх
-        if (episodeLinks.isNotEmpty()) {
-            episodeLinks.forEachIndexed { idx, a ->
-                val href = a.attr("href")
-                if (href.isNotBlank()) {
-                    val epNumText = a.text()
-                    // Спроба знайти номер епізоду з тексту
-                    var epNum = Regex("(\\d+)").find(epNumText)?.value?.toIntOrNull()
-                    if (epNum == null) {
-                        // Якщо не знайшли, спробуємо з href
-                        epNum = Regex("(\\d+)").find(href)?.value?.toIntOrNull()
-                    }
-                    if (epNum == null) epNum = idx + 1
-                    val fullUrl = if (href.startsWith("/")) mainUrl + href else href
-                    episodes.add(
-                        newEpisode(fullUrl) {
-                            name = "Епізод $epNum"
-                            this.episode = epNum
-                            posterUrl = animeInfo.image.preview
-                        }
-                    )
-                }
-            }
-        } else {
-            // Якщо HTML не дав результатів, пробуємо API (на випадок, якщо воно все ж спрацює)
-            val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId")
-            if (fundubsJson != null) {
-                try {
-                    val fundubsModel = Gson().fromJson(fundubsJson, FundubsModel::class.java)
-                    val fundubs = fundubsModel.fundubs ?: emptyList()
-                    if (fundubs.isNotEmpty()) {
-                        val fundub = fundubs[0]
-                        val player = fundub.player.firstOrNull()
-                        val fundubId = fundub.fundub.id
-                        if (player != null) {
-                            val episodesUrl = "$mainUrl/api/player/episodes/$animeId?playerId=${player.id}&fundubId=$fundubId"
-                            val episodesJson = fetchJsonOrNull(episodesUrl)
-                            if (episodesJson != null) {
-                                val playerEpisodes = Gson().fromJson(episodesJson, PlayerEpisodes::class.java)
-                                playerEpisodes.episodes?.forEach { ep ->
-                                    episodes.add(
-                                        newEpisode("$animeId,${ep.episode}") {
-                                            name = "Епізод ${ep.episode}"
-                                            posterUrl = ep.poster
-                                            this.episode = ep.episode
-                                        }
-                                    )
-                                }
+        
+        // Отримуємо епізоди через API (прямий метод)
+        val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId")
+        if (fundubsJson != null) {
+            try {
+                val fundubsModel = Gson().fromJson(fundubsJson, FundubsModel::class.java)
+                val fundubs = fundubsModel.fundubs ?: emptyList()
+                if (fundubs.isNotEmpty()) {
+                    val fundub = fundubs[0]
+                    val player = fundub.player.firstOrNull()
+                    val fundubId = fundub.fundub.id
+                    if (player != null) {
+                        val episodesUrl = "$mainUrl/api/player/episodes/$animeId?playerId=${player.id}&fundubId=$fundubId"
+                        val episodesJson = fetchJsonOrNull(episodesUrl)
+                        if (episodesJson != null) {
+                            val playerEpisodes = Gson().fromJson(episodesJson, PlayerEpisodes::class.java)
+                            playerEpisodes.episodes?.forEach { ep ->
+                                episodes.add(
+                                    newEpisode("$animeId,${ep.episode}") {
+                                        name = "Епізод ${ep.episode}"
+                                        posterUrl = ep.poster
+                                        this.episode = ep.episode
+                                    }
+                                )
                             }
                         }
                     }
-                } catch (e: Exception) { }
-            }
+                }
+            } catch (e: Exception) { }
         }
 
         val showStatus = if (animeInfo.status?.contains("ongoing") == true) ShowStatus.Ongoing else ShowStatus.Completed
@@ -203,47 +152,30 @@ class AnimeONProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Якщо data — це URL сторінки епізоду (починається з http)
-        if (data.startsWith("http")) {
-            val pageHtml = fetchHtml(data) ?: return false
-            // Шукаємо m3u8-посилання в скриптах
-            val scripts = app.get(data).document.select("script").html()
-            val match = fileRegex.find(scripts)
-            if (match != null) {
-                val videoUrl = match.groupValues[1]
-                if (videoUrl.isNotEmpty()) {
-                    val m3u8Url = if (videoUrl.contains(".m3u8")) videoUrl else getM3U8FromPage(videoUrl)
-                    if (m3u8Url.isNotEmpty()) {
-                        M3u8Helper.generateM3u8("AnimeON", m3u8Url, referer = mainUrl).dropLast(1).forEach(callback)
-                        return true
-                    }
-                }
+        val dataList = data.split(",")
+        if (dataList.size < 2) return false
+        val animeId = dataList[0].trim().toIntOrNull() ?: return false
+        val episodeNum = dataList[1].trim().toIntOrNull() ?: return false
+
+        val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId") ?: return false
+        val fundubsModel = try { Gson().fromJson(fundubsJson, FundubsModel::class.java) } catch (e: Exception) { return false }
+        val fundub = fundubsModel.fundubs?.firstOrNull() ?: return false
+        val player = fundub.player.firstOrNull() ?: return false
+        val fundubId = fundub.fundub.id
+
+        val videoInfoUrl = "$apiUrl/player/$animeId/${player.id}/$fundubId?episode=$episodeNum"
+        val videoInfoJson = fetchJsonOrNull(videoInfoUrl) ?: return false
+        val videoUrlData = try { Gson().fromJson(videoInfoJson, FundubVideoUrl::class.java) } catch (e: Exception) { return false }
+        val videoUrl = videoUrlData.videoUrl
+
+        if (videoUrl.isNotEmpty()) {
+            val m3u8Url = if (videoUrl.contains(".m3u8")) videoUrl else getM3U8FromPage(videoUrl)
+            if (m3u8Url.isNotEmpty()) {
+                M3u8Helper.generateM3u8("AnimeON", m3u8Url, referer = mainUrl).dropLast(1).forEach(callback)
+                return true
             }
-            return false
-        } else {
-            // Старий API спосіб (резерв)
-            val dataList = data.split(",")
-            if (dataList.size < 2) return false
-            val animeId = dataList[0].trim().toIntOrNull() ?: return false
-            val episodeNum = dataList[1].trim().toIntOrNull() ?: return false
-            val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId") ?: return false
-            val fundubsModel = try { Gson().fromJson(fundubsJson, FundubsModel::class.java) } catch (e: Exception) { return false }
-            val fundub = fundubsModel.fundubs?.firstOrNull() ?: return false
-            val player = fundub.player.firstOrNull() ?: return false
-            val fundubId = fundub.fundub.id
-            val videoInfoUrl = "$apiUrl/player/$animeId/${player.id}/$fundubId?episode=$episodeNum"
-            val videoInfoJson = fetchJsonOrNull(videoInfoUrl) ?: return false
-            val videoUrlData = try { Gson().fromJson(videoInfoJson, FundubVideoUrl::class.java) } catch (e: Exception) { return false }
-            val videoUrl = videoUrlData.videoUrl
-            if (videoUrl.isNotEmpty()) {
-                val m3u8Url = if (videoUrl.contains(".m3u8")) videoUrl else getM3U8FromPage(videoUrl)
-                if (m3u8Url.isNotEmpty()) {
-                    M3u8Helper.generateM3u8("AnimeON", m3u8Url, referer = mainUrl).dropLast(1).forEach(callback)
-                    return true
-                }
-            }
-            return false
         }
+        return false
     }
 
     private suspend fun getM3U8FromPage(url: String): String {
