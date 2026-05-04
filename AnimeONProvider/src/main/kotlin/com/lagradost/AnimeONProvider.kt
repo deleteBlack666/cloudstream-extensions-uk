@@ -217,42 +217,42 @@ class AnimeONProvider : MainAPI() {
 
         if (dataList.size == 2) {
             fundubs.map { dub ->
-                Gson().fromJson(
-                    app.get(
-                        "$mainUrl/api/player/episodes/${dataList[0]}?playerId=${dub.player[0].id}&fundubId=${dub.fundub.id}",
-                        headers = mapOf("Referer" to mainUrl)
-                    ).text, PlayerEpisodes::class.java
-                ).episodes.filter { it.episode == dataList[1].toIntOrNull() }.map { epd ->
-                    M3u8Helper.generateM3u8(
-                        source = "${dub.fundub.name} (${dub.player[0].name})",
-                        streamUrl = getM3U(
+                val videoUrl = app.get(
+                    "$mainUrl/api/player/episode/${
+                        Gson().fromJson(
                             app.get(
-                                "$mainUrl/api/player/episode/${epd.id}",
+                                "$mainUrl/api/player/episodes/${dataList[0]}?playerId=${dub.player[0].id}&fundubId=${dub.fundub.id}",
                                 headers = mapOf("Referer" to mainUrl)
-                            ).parsedSafe<FundubVideoUrl>()!!.videoUrl
-                        ),
-                        referer = "https://moonanime.art/",
-                        headers = mapOf(
-                            "User-Agent" to "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
-                            "Accept" to "*/*",
-                            "accept-language" to "uk,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-                            "origin" to "https://moonanime.art"
-                        )
-                    ).dropLast(1).forEach(callback)
-                }
+                            ).text, PlayerEpisodes::class.java
+                        ).episodes.firstOrNull { it.episode == dataList[1].toIntOrNull() }?.id ?: return@map
+                    }",
+                    headers = mapOf("Referer" to mainUrl)
+                ).parsedSafe<FundubVideoUrl>()?.videoUrl ?: return@map
+
+                M3u8Helper.generateM3u8(
+                    source = "${dub.fundub.name} (${dub.player[0].name})",
+                    streamUrl = getM3U(videoUrl),
+                    referer = "https://moonanime.art/",
+                    headers = mapOf(
+                        "User-Agent" to "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
+                        "Accept" to "*/*",
+                        "accept-language" to "uk,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+                        "origin" to "https://moonanime.art"
+                    )
+                ).dropLast(1).forEach(callback)
             }
             return true
         }
 
         fundubs.map { dub ->
+            val videoUrl = app.get(
+                "${apiUrl}/player/${dataList[0]}/${dub.player[0].id}/${dub.fundub.id}",
+                headers = mapOf("Referer" to mainUrl)
+            ).parsedSafe<FundubVideoUrl>()?.videoUrl ?: return@map
+
             M3u8Helper.generateM3u8(
                 source = "${dub.fundub.name} (${dub.player[0].name})",
-                streamUrl = getM3U(
-                    app.get(
-                        "${apiUrl}/player/${dataList[0]}/${dub.player[0].id}/${dub.fundub.id}",
-                        headers = mapOf("Referer" to mainUrl)
-                    ).parsedSafe<FundubVideoUrl>()!!.videoUrl
-                ),
+                streamUrl = getM3U(videoUrl),
                 referer = ""
             ).dropLast(1).forEach(callback)
         }
