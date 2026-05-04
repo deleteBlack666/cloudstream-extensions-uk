@@ -19,14 +19,5 @@
 <!-- Installation guide -->
 ## ⚙️ Інсталяція
 Скопіюйте посилання нижче і перейдіть в Додаток -> Параметри -> Розширення -> Додати репозиторій
-```
+
 https://raw.githubusercontent.com/deleteBlack666/cloudstream-extensions-uk/master/repo.json
-...
-
-<!-- Contributing -->
-## 💖 Зробити внесок
-Внески завжди вітаються! Якщо щось зламається - не кричіть, що гівно, краще піду в X. Краще напишіть Issue про проблему, яка у вас трапилася. Я давно вже не користуюся своїм творінням, тому баги, які останнім часом фікшу - багрепорти від користувачів. Так само буду радий, якщо ви особисто надішлете мені Pull Request!
-
-## 🛠 Збірка
-  - Windows: `.\gradlew.bat ExampleProvider:make` або `.\gradlew.bat ExampleProvider:deployWithAdb`
-  - Linux & Mac: `./gradlew ExampleProvider:make` або `./gradlew ExampleProvider:deployWithAdb`
