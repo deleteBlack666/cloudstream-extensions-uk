@@ -42,31 +42,29 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
-    // Отримуємо slug аніме (унікальний ідентифікатор у URL)
     private suspend fun getSlug(animeId: Int): String? {
         val json = fetchJsonOrNull("$mainUrl/api/anime/$animeId") ?: return null
-        val info = try { Gson().fromJson(json, AnimeInfoModel::class.java) } catch (e: Exception) { return null }
-        return info.slug?.takeIf { it.isNotEmpty() }
+        return try {
+            val obj = Gson().fromJson(json, com.google.gson.JsonObject::class.java)
+            obj.get("slug")?.asString
+        } catch (e: Exception) { null }
     }
 
-    // Отримуємо vid для конкретного епізоду (з API або HTML)
     private suspend fun getVid(animeId: Int, episode: Int): String? {
-        // Спроба отримати з API (якщо є такий ендпоінт)
         val vidUrl = "$mainUrl/api/player/vid/$animeId?episode=$episode"
         val vidJson = fetchJsonOrNull(vidUrl)
         if (vidJson != null) {
             try {
-                val data = Gson().fromJson(vidJson, VidResponse::class.java)
-                if (data.vid > 0) return data.vid.toString()
+                val obj = Gson().fromJson(vidJson, com.google.gson.JsonObject::class.java)
+                val vid = obj.get("vid")?.asInt ?: 0
+                if (vid > 0) return vid.toString()
             } catch (e: Exception) { }
         }
-        // Резерв: парсимо HTML сторінки плеєра
         val watchUrl = "$mainUrl/anime/$animeId/watch?ep=$episode"
         val doc = app.get(watchUrl).document
         val scripts = doc.select("script").eachText().joinToString("\n")
         val pattern = Regex("""vid[^0-9]*[:=]\s*["']?(\d+)["']?""")
-        val match = pattern.find(scripts)
-        return match?.groupValues?.get(1)
+        return pattern.find(scripts)?.groupValues?.get(1)
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -115,7 +113,10 @@ class AnimeONProvider : MainAPI() {
         val jsonText = fetchJsonOrNull(apiUrlPath) ?: throw Exception("Не вдалося завантажити інформацію про аніме")
         val animeInfo = try { Gson().fromJson(jsonText, AnimeInfoModel::class.java) } catch (e: Exception) { throw Exception("Помилка парсингу JSON") }
         val animeId = animeInfo.id
-        val slug = animeInfo.slug ?: getSlug(animeId) ?: "unknown"
+
+        var slug = animeInfo.slug
+        if (slug.isNullOrEmpty()) slug = getSlug(animeId)
+        if (slug.isNullOrEmpty()) slug = "unknown"
 
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
         val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId")
@@ -184,9 +185,7 @@ class AnimeONProvider : MainAPI() {
 
         val vid = getVid(animeId, episodeNum)
         if (vid != null && slug.isNotEmpty()) {
-            // Формуємо сезон (за замовчуванням 1, можна отримувати з іншого API)
-            val season = 1
-            val seasonStr = season.toString().padStart(2, '0')
+            val seasonStr = "01" // або визначити сезон
             val episodeStr = episodeNum.toString().padStart(2, '0')
             val m3u8Url = "https://ashdi.vip/video04/2/new/${slug}_s${seasonStr}e${episodeStr}_$vid/hls/BKiPlHaPlftdkwfhA4k=/index.m3u8"
             M3u8Helper.generateM3u8("AnimeON", m3u8Url, referer = "https://animeon.club").dropLast(1).forEach(callback)
@@ -195,5 +194,3 @@ class AnimeONProvider : MainAPI() {
         return false
     }
 }
-
-data class VidResponse(val vid: Int)
