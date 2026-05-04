@@ -2,6 +2,8 @@ package com.lagradost
 
 import com.google.gson.Gson
 import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.LoadResponse.Companion.addMalId
+import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.models.*
@@ -34,7 +36,7 @@ class AnimeONProvider : MainAPI() {
         "$apiUrl?pageSize=24&pageIndex=%d" to "Нове",
     )
 
-    // Функція для безпечного отримання JSON, повертає null у разі помилки
+    // Безпечне отримання JSON, повертає null при помилці або Cloudflare
     private suspend fun fetchJsonOrNull(url: String): String? {
         return try {
             val response = app.get(url, headers = mapOf(
@@ -120,7 +122,9 @@ class AnimeONProvider : MainAPI() {
             else -> TvType.Anime
         }
 
-        val episodes = mutableListOf<Episode>()
+        // Явно вказуємо тип Episode з cloudstream3, щоб уникнути конфлікту
+        val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
+
         val fundubsUrl = "$mainUrl/api/player/fundubs/${animeJSON.id}"
         val fundubsJson = fetchJsonOrNull(fundubsUrl) ?: return newAnimeLoadResponse(
             animeJSON.titleUa, "$mainUrl/anime/${animeJSON.id}", tvType
@@ -167,13 +171,13 @@ class AnimeONProvider : MainAPI() {
             this.engName = animeJSON.titleEn
             this.tags = animeJSON.genres?.mapNotNull { it?.nameUa } ?: emptyList()
             this.plot = animeJSON.description
-            addTrailer(animeJSON.trailer)
+            addTrailer(animeJSON.trailer)           // тепер доступно
             this.showStatus = showStatus
             this.duration = extractIntFromString(animeJSON.episodeTime ?: "")
             this.year = animeJSON.releaseDate?.toIntOrNull()
             this.score = Score.from10(animeJSON.rating)
             addEpisodes(DubStatus.Dubbed, episodes)
-            addMalId(animeJSON.malId?.toIntOrNull())
+            addMalId(animeJSON.malId?.toIntOrNull()) // тепер доступно
         }
     }
 
