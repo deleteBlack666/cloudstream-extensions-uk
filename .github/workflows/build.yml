@@ -11,21 +11,27 @@ on:
       - main
     paths-ignore:
       - '*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@master
+        uses: actions/checkout@v4
         with:
           path: "src"
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout builds
-        uses: actions/checkout@master
+        uses: actions/checkout@v4
         with:
           ref: "builds"
           path: "builds"
+          token: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
 
       - name: Create builds branch if not exists
@@ -34,7 +40,7 @@ jobs:
             mkdir -p $GITHUB_WORKSPACE/builds
             cd $GITHUB_WORKSPACE/builds
             git init
-            git remote add origin https://github.com/$GITHUB_REPOSITORY.git
+            git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/$GITHUB_REPOSITORY.git
             git checkout --orphan builds
             git config --local user.email "actions@github.com"
             git config --local user.name "GitHub Actions"
@@ -55,7 +61,7 @@ jobs:
           cache: 'gradle'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v2
+        uses: android-actions/setup-android@v3
 
       - name: Build Plugins
         run: |
@@ -70,6 +76,7 @@ jobs:
           cd $GITHUB_WORKSPACE/builds
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/$GITHUB_REPOSITORY.git
           git add .
           git commit --amend -m "Build $GITHUB_SHA" || exit 0
           git push --force
