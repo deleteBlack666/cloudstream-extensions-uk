@@ -34,15 +34,15 @@ class AnimeONProvider : MainAPI() {
         "$apiUrl?pageSize=24&pageIndex=%d" to "Нове"
     )
 
-    // Кеш cookies
     private var cachedCookies: String? = null
 
     private suspend fun getCookies(): String? {
         if (cachedCookies != null) return cachedCookies
         val response = app.get(mainUrl, headers = mapOf("User-Agent" to userAgent))
-        val cookies = response.cookies()?.joinToString("; ") { "${it.name}=${it.value}" }
-        cachedCookies = cookies
-        return cookies
+        val cookiesMap = response.cookies()
+        val cookieString = cookiesMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
+        cachedCookies = cookieString
+        return cookieString
     }
 
     private suspend fun fetchJsonOrNull(url: String): String? {
