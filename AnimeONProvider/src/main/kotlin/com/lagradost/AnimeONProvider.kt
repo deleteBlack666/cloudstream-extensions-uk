@@ -44,12 +44,6 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
-    private suspend fun fetchHtml(url: String): String? {
-        return try {
-            app.get(url, headers = mapOf("Referer" to mainUrl, "User-Agent" to userAgent)).text
-        } catch (e: Exception) { null }
-    }
-
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         if (!request.data.contains("pageIndex") && page != 1) return newHomePageResponse(emptyList())
         val jsonText = fetchJsonOrNull(request.data.format(page)) ?: return newHomePageResponse(request.name, emptyList())
@@ -100,22 +94,24 @@ class AnimeONProvider : MainAPI() {
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
         val document = app.get(url).document
 
-        // Шукаємо посилання на епізоди – спочатку за типовими маркерами
+        // Шукаємо всі посилання, які містять /watch/, /episode/, /ep/ або мають класи з епізодами
         var episodeLinks = document.select("a[href*='/watch/'], a[href*='/episode/'], a[href*='/ep/']")
         if (episodeLinks.isEmpty()) {
-            episodeLinks = document.select(".episodes a, .episode-list a, .series-list a, .video-list a")
+            episodeLinks = document.select(".episodes a, .episode-list a, .series-list a, .video-list a, .season-episodes a")
         }
         if (episodeLinks.isEmpty()) {
-            episodeLinks = document.select("a[href]").filter { 
+            // Остання спроба: всі посилання, чий текст містить цифри та схожі на "Серія 1"
+            episodeLinks = document.select("a").filter {
                 val href = it.attr("href")
-                (href.contains("/watch/") || href.contains("/episode/")) && it.text().matches(Regex(".*\\d+.*"))
+                val text = it.text()
+                (href.contains("/anime/") && !href.contains("/anime/${animeId}")) && text.contains(Regex("\\d"))
             }
         }
 
         if (episodeLinks.isNotEmpty()) {
             episodeLinks.forEachIndexed { idx, a ->
                 val href = a.attr("href")
-                if (href.isNotBlank()) {
+                if (href.isNotBlank() && !href.contains("/anime/${animeId}")) {
                     var epNum = Regex("(\\d+)").find(a.text())?.value?.toIntOrNull()
                     if (epNum == null) epNum = Regex("(\\d+)").find(href)?.value?.toIntOrNull()
                     if (epNum == null) epNum = idx + 1
@@ -129,8 +125,10 @@ class AnimeONProvider : MainAPI() {
                     )
                 }
             }
-        } else {
-            // Резервний варіант через API (може не спрацювати)
+        }
+
+        // Резервний варіант через API (якщо HTML не дав результатів)
+        if (episodes.isEmpty()) {
             val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId")
             if (fundubsJson != null) {
                 try {
@@ -190,7 +188,7 @@ class AnimeONProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Якщо data – це URL сторінки епізоду
+        // Якщо data – URL сторінки епізоду
         if (data.startsWith("http")) {
             val doc = app.get(data).document
             // Шукаємо file: в script
@@ -206,7 +204,7 @@ class AnimeONProvider : MainAPI() {
                     }
                 }
             }
-            // Якщо не знайшли, шукаємо iframe плеєра
+            // Якщо не знайшли, шукаємо iframe
             val iframe = doc.select("iframe[src*='player'], iframe[src*='video']").firstOrNull()
             if (iframe != null) {
                 val iframeUrl = iframe.attr("src")
@@ -227,7 +225,7 @@ class AnimeONProvider : MainAPI() {
             }
             return false
         } else {
-            // Резервний API-метод
+            // Старий API метод (резерв)
             val dataList = data.split(",")
             if (dataList.size < 2) return false
             val animeId = dataList[0].trim().toIntOrNull() ?: return false
