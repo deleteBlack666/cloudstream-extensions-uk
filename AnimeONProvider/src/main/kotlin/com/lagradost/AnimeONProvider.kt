@@ -44,9 +44,12 @@ class AnimeONProvider : MainAPI() {
 
     private val apiUrl = "$mainUrl/api/anime"
     private val posterApi = "$mainUrl/api/uploads/images/%s"
-    private val searchApi = "$apiUrl/search?=text="
+    private val searchApi = "$apiUrl/search?text="
 
     val fileRegex = "file\\s*:\\s*[\"']([^\",']+?)[\"']".toRegex()
+
+    // Додаємо User-Agent для імітації браузера
+    private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
     override val mainPage = mainPageOf(
         "$apiUrl/popular" to "Популярне",
@@ -54,18 +57,29 @@ class AnimeONProvider : MainAPI() {
         "$apiUrl?pageSize=24&pageIndex=%d" to "Нове",
     )
 
+    // Допоміжна функція для безпечного отримання JSON
+    private suspend fun fetchJson(url: String): String {
+        val response = app.get(url, headers = mapOf(
+            "Referer" to mainUrl,
+            "User-Agent" to userAgent
+        )).text
+        if (response.contains("cloudflare", ignoreCase = true) ||
+            response.contains("cf-browser-verification", ignoreCase = true) ||
+            (!response.trimStart().startsWith("{") && !response.trimStart().startsWith("["))
+        ) {
+            throw Exception("Cloudflare protection detected or invalid JSON from $url")
+        }
+        return response
+    }
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         if (!request.data.contains("pageIndex") && page != 1) {
             return newHomePageResponse(emptyList())
         }
 
-        val document = app.get(
-            request.data.format(page),
-            headers = mapOf("Referer" to mainUrl)
-        ).text
-
-        // ✅ ВАЖЛИВО: всюди парсимо як об'єкт
-        val parsedJSON = Gson().fromJson(document, NewAnimeModel::class.java)
+        val url = request.data.format(page)
+        val jsonText = fetchJson(url)
+        val parsedJSON = Gson().fromJson(jsonText, NewAnimeModel::class.java)
 
         val homeList = parsedJSON.results.map {
             newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
@@ -79,13 +93,9 @@ class AnimeONProvider : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val animeJSON = Gson().fromJson(
-            app.get(
-                searchApi + query,
-                headers = mapOf("Referer" to mainUrl)
-            ).text,
-            SearchModel::class.java
-        )
+        val url = searchApi + query
+        val jsonText = fetchJson(url)
+        val animeJSON = Gson().fromJson(jsonText, SearchModel::class.java)
 
         return animeJSON.result.map {
             newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
@@ -96,13 +106,9 @@ class AnimeONProvider : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val animeJSON = Gson().fromJson(
-            app.get(
-                url.replace("/anime/", "/api/anime/"),
-                headers = mapOf("Referer" to "$mainUrl/")
-            ).text,
-            AnimeInfoModel::class.java
-        )
+        val apiUrlPath = url.replace("/anime/", "/api/anime/")
+        val jsonText = fetchJson(apiUrlPath)
+        val animeJSON = Gson().fromJson(jsonText, AnimeInfoModel::class.java)
 
         val showStatus = when {
             animeJSON.status?.contains("ongoing") == true -> ShowStatus.Ongoing
@@ -119,18 +125,14 @@ class AnimeONProvider : MainAPI() {
 
         val episodes = mutableListOf<Episode>()
 
-        val fundubs = Gson().fromJson(
-            app.get("$mainUrl/api/player/fundubs/${animeJSON.id}").text,
-            FundubsModel::class.java
-        ).fundubs
+        val fundubsUrl = "$mainUrl/api/player/fundubs/${animeJSON.id}"
+        val fundubsJson = fetchJson(fundubsUrl)
+        val fundubs = Gson().fromJson(fundubsJson, FundubsModel::class.java).fundubs
 
         if (fundubs.isNotEmpty()) {
-            val epJson = Gson().fromJson(
-                app.get(
-                    "$mainUrl/api/player/episodes/${animeJSON.id}?playerId=${fundubs[0].player[0].id}&fundubId=${fundubs[0].fundub.id}"
-                ).text,
-                PlayerEpisodes::class.java
-            )
+            val epUrl = "$mainUrl/api/player/episodes/${animeJSON.id}?playerId=${fundubs[0].player[0].id}&fundubId=${fundubs[0].fundub.id}"
+            val epJsonText = fetchJson(epUrl)
+            val epJson = Gson().fromJson(epJsonText, PlayerEpisodes::class.java)
 
             epJson.episodes.forEach { ep ->
                 episodes.add(
@@ -170,22 +172,28 @@ class AnimeONProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val dataList = data.split(", ")
-
-        val fundubs = Gson().fromJson(
-            app.get("$mainUrl/api/player/fundubs/${dataList[0]}").text,
-            FundubsModel::class.java
-        ).fundubs
+        val fundubsUrl = "$mainUrl/api/player/fundubs/${dataList[0]}"
+        val fundubsJson = try {
+            fetchJson(fundubsUrl)
+        } catch (e: Exception) {
+            return false
+        }
+        val fundubs = Gson().fromJson(fundubsJson, FundubsModel::class.java).fundubs
 
         fundubs.forEach { dub ->
-            val videoUrl = app.get(
-                "${apiUrl}/player/${dataList[0]}/${dub.player[0].id}/${dub.fundub.id}"
+            val videoUrlResponse = app.get(
+                "${apiUrl}/player/${dataList[0]}/${dub.player[0].id}/${dub.fundub.id}",
+                headers = mapOf("Referer" to mainUrl, "User-Agent" to userAgent)
             ).parsedSafe<FundubVideoUrl>()?.videoUrl ?: return@forEach
 
-            M3u8Helper.generateM3u8(
-                source = "${dub.fundub.name} (${dub.player[0].name})",
-                streamUrl = getM3U(videoUrl),
-                referer = ""
-            ).dropLast(1).forEach(callback)
+            val m3uUrl = getM3U(videoUrlResponse)
+            if (m3uUrl.isNotEmpty()) {
+                M3u8Helper.generateM3u8(
+                    source = "${dub.fundub.name} (${dub.player[0].name})",
+                    streamUrl = m3uUrl,
+                    referer = mainUrl
+                ).dropLast(1).forEach(callback)
+            }
         }
 
         return true
@@ -196,7 +204,12 @@ class AnimeONProvider : MainAPI() {
     }
 
     private suspend fun getM3U(url: String): String {
-        return fileRegex.find(app.get(url).document.select("script").html())
-            ?.groups?.get(1)?.value ?: ""
+        val response = app.get(url, headers = mapOf(
+            "Referer" to mainUrl,
+            "User-Agent" to userAgent
+        ))
+        val html = response.document.select("script").html()
+        if (html.contains("cloudflare", ignoreCase = true)) return ""
+        return fileRegex.find(html)?.groups?.get(1)?.value ?: ""
     }
 }
