@@ -2,17 +2,21 @@ package com.lagradost.models
 
 import com.google.gson.annotations.SerializedName
 
-data class PlayerEpisodes (
-
-        @SerializedName("episodes") val episodes: List<FundubEpisode>,
-        @SerializedName("anotherPlayer") val anotherPlayer: String?
-
+data class FundubsModel (
+    @SerializedName("funDubs") val fundubs : List<FundubModel>
 )
 
-data class FundubEpisode (
+data class FundubModel (
+    @SerializedName("fundub") val fundub : Fundub,
+    @SerializedName("player") val player : List<FundubPlayer>
+)
 
-        @SerializedName("id") val id : Int,
-        @SerializedName("episode") val episode : Int,
-        @SerializedName("subtitles") val subtitles : Boolean,
-        @SerializedName("poster") val poster : String
+data class Fundub (
+    @SerializedName("id") val id : Int,
+    @SerializedName("name") val name : String
+)
+
+data class FundubPlayer (
+    @SerializedName("name") val name : String,
+    @SerializedName("id") val id : Int
 )
