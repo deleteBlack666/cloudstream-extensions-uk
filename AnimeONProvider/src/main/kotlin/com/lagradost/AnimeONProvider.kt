@@ -34,29 +34,28 @@ class AnimeONProvider : MainAPI() {
         "$apiUrl?pageSize=24&pageIndex=%d" to "Нове"
     )
 
-    private suspend fun fetchJsonOrNull(url: String): String? {
-        return try {
-            val response = app.get(url, headers = mapOf("Referer" to mainUrl, "User-Agent" to userAgent)).text
-            if (response.contains("cloudflare", ignoreCase = true) ||
-                response.contains("cf-browser-verification", ignoreCase = true) ||
-                (!response.trimStart().startsWith("{") && !response.trimStart().startsWith("["))
-            ) null else response
-        } catch (e: Exception) { null }
+    // Кеш cookies
+    private var cachedCookies: String? = null
+
+    private suspend fun getCookies(): String? {
+        if (cachedCookies != null) return cachedCookies
+        val response = app.get(mainUrl, headers = mapOf("User-Agent" to userAgent))
+        val cookies = response.cookies()?.joinToString("; ") { "${it.name}=${it.value}" }
+        cachedCookies = cookies
+        return cookies
     }
 
-    private fun extractEpisodeNumber(text: String): Int? {
-        val patterns = listOf(
-            Regex("(?:серія|епізод|episode|series|seria)\\s*(\\d+)", RegexOption.IGNORE_CASE),
-            Regex("#(\\d+)"),
-            Regex("(\\d+)\\s*(?:серія|епізод|episode|series|seria)", RegexOption.IGNORE_CASE),
-            Regex("(\\d+)")
-        )
-        for (pat in patterns) {
-            pat.find(text)?.let { match ->
-                return match.groupValues[1].toIntOrNull()
-            }
-        }
-        return null
+    private suspend fun fetchJsonOrNull(url: String): String? {
+        return try {
+            val headers = mutableMapOf("Referer" to mainUrl, "User-Agent" to userAgent)
+            getCookies()?.let { headers["Cookie"] = it }
+            val response = app.get(url, headers = headers)
+            val text = response.text
+            if (text.contains("cloudflare", ignoreCase = true) ||
+                text.contains("cf-browser-verification", ignoreCase = true) ||
+                (!text.trimStart().startsWith("{") && !text.trimStart().startsWith("["))
+            ) null else text
+        } catch (e: Exception) { null }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -107,50 +106,34 @@ class AnimeONProvider : MainAPI() {
         val animeId = animeInfo.id
 
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
-        try {
-            val doc = app.get(url).document
-            val selectors = listOf(
-                "a[href*='/watch/']",
-                "a[href*='/episode/']",
-                "a[href*='/ep/']",
-                ".episodes a",
-                ".episode-item a",
-                ".serie-item a",
-                "a.series-episode"
-            )
-            var episodeElements = mutableListOf<org.jsoup.nodes.Element>()
-            for (selector in selectors) {
-                val elements = doc.select(selector)
-                if (elements.isNotEmpty()) {
-                    episodeElements = elements.toList().toMutableList()
-                    break
-                }
-            }
-            if (episodeElements.isEmpty()) {
-                val allLinks = doc.select("a")
-                episodeElements = allLinks.filter { a ->
-                    val href = a.attr("href")
-                    (href.startsWith("/anime/") && href != "/anime/$animeId") || a.text().matches(Regex(".*\\d+.*"))
-                }.toMutableList()
-            }
-
-            for (a in episodeElements) {
-                val href = a.attr("href")
-                if (href.isBlank()) continue
-                var epNum = extractEpisodeNumber(a.text())
-                if (epNum == null) epNum = extractEpisodeNumber(href)
-                if (epNum == null) continue
-                val fullUrl = if (href.startsWith("/")) mainUrl + href else href
-                episodes.add(
-                    newEpisode(fullUrl) {
-                        name = "Епізод $epNum"
-                        this.episode = epNum
-                        posterUrl = animeInfo.image.preview
+        val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId")
+        if (fundubsJson != null) {
+            try {
+                val fundubsModel = Gson().fromJson(fundubsJson, FundubsModel::class.java)
+                val fundubs = fundubsModel.fundubs ?: emptyList()
+                if (fundubs.isNotEmpty()) {
+                    val fundub = fundubs[0]
+                    val player = fundub.player.firstOrNull()
+                    val fundubId = fundub.fundub.id
+                    if (player != null) {
+                        val episodesUrl = "$mainUrl/api/player/episodes/$animeId?playerId=${player.id}&fundubId=$fundubId"
+                        val episodesJson = fetchJsonOrNull(episodesUrl)
+                        if (episodesJson != null) {
+                            val playerEpisodes = Gson().fromJson(episodesJson, PlayerEpisodes::class.java)
+                            playerEpisodes.episodes?.forEach { ep ->
+                                episodes.add(
+                                    newEpisode("$animeId,${ep.episode}") {
+                                        name = "Епізод ${ep.episode}"
+                                        posterUrl = ep.poster
+                                        this.episode = ep.episode
+                                    }
+                                )
+                            }
+                        }
                     }
-                )
-            }
-            episodes.sortBy { it.episode }
-        } catch (e: Exception) { }
+                }
+            } catch (e: Exception) { }
+        }
 
         val showStatus = if (animeInfo.status?.contains("ongoing") == true) ShowStatus.Ongoing else ShowStatus.Completed
         val tvType = when {
@@ -181,43 +164,35 @@ class AnimeONProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        if (!data.startsWith("http")) return false
-        val doc = app.get(data).document
-        val scripts = doc.select("script").eachText().joinToString("\n")
-        val match = fileRegex.find(scripts)
-        if (match != null) {
-            val videoUrl = match.groupValues[1]
-            if (videoUrl.isNotEmpty()) {
-                val finalUrl = if (videoUrl.contains(".m3u8")) videoUrl else getM3U8FromPage(videoUrl)
-                if (finalUrl.isNotEmpty()) {
-                    M3u8Helper.generateM3u8("AnimeON", finalUrl, referer = mainUrl).dropLast(1).forEach(callback)
-                    return true
-                }
-            }
-        }
-        val iframe = doc.select("iframe[src*='player'], iframe[src*='video']").firstOrNull()
-        if (iframe != null) {
-            val iframeUrl = iframe.attr("src")
-            if (iframeUrl.isNotBlank()) {
-                val fullIframe = if (iframeUrl.startsWith("/")) mainUrl + iframeUrl else iframeUrl
-                val iframeDoc = app.get(fullIframe).document
-                val iframeScripts = iframeDoc.select("script").html()
-                val iframeMatch = fileRegex.find(iframeScripts)
-                if (iframeMatch != null) {
-                    val videoUrl = iframeMatch.groupValues[1]
-                    val finalUrl = if (videoUrl.contains(".m3u8")) videoUrl else getM3U8FromPage(videoUrl)
-                    if (finalUrl.isNotEmpty()) {
-                        M3u8Helper.generateM3u8("AnimeON", finalUrl, referer = mainUrl).dropLast(1).forEach(callback)
-                        return true
-                    }
-                }
+        val dataList = data.split(",")
+        if (dataList.size < 2) return false
+        val animeId = dataList[0].trim().toIntOrNull() ?: return false
+        val episodeNum = dataList[1].trim().toIntOrNull() ?: return false
+
+        val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId") ?: return false
+        val fundubsModel = try { Gson().fromJson(fundubsJson, FundubsModel::class.java) } catch (e: Exception) { return false }
+        val fundub = fundubsModel.fundubs?.firstOrNull() ?: return false
+        val player = fundub.player.firstOrNull() ?: return false
+        val fundubId = fundub.fundub.id
+
+        val videoInfoUrl = "$apiUrl/player/$animeId/${player.id}/$fundubId?episode=$episodeNum"
+        val videoInfoJson = fetchJsonOrNull(videoInfoUrl) ?: return false
+        val videoUrlData = try { Gson().fromJson(videoInfoJson, FundubVideoUrl::class.java) } catch (e: Exception) { return false }
+        val videoUrl = videoUrlData.videoUrl
+        if (videoUrl.isNotEmpty()) {
+            val finalUrl = if (videoUrl.contains(".m3u8")) videoUrl else getM3U8FromPage(videoUrl)
+            if (finalUrl.isNotEmpty()) {
+                M3u8Helper.generateM3u8("AnimeON", finalUrl, referer = mainUrl).dropLast(1).forEach(callback)
+                return true
             }
         }
         return false
     }
 
     private suspend fun getM3U8FromPage(url: String): String {
-        val response = app.get(url, headers = mapOf("Referer" to mainUrl, "User-Agent" to userAgent))
+        val headers = mutableMapOf("Referer" to mainUrl, "User-Agent" to userAgent)
+        getCookies()?.let { headers["Cookie"] = it }
+        val response = app.get(url, headers = headers)
         val html = response.document.select("script").html()
         return fileRegex.find(html)?.groupValues?.get(1) ?: ""
     }
