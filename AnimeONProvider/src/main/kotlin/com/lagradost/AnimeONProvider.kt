@@ -34,27 +34,13 @@ class AnimeONProvider : MainAPI() {
         "$apiUrl?pageSize=24&pageIndex=%d" to "Нове"
     )
 
-    private var cachedCookies: String? = null
-
-    private suspend fun getCookies(): String? {
-        if (cachedCookies != null) return cachedCookies
-        val response = app.get(mainUrl, headers = mapOf("User-Agent" to userAgent))
-        val cookiesMap = response.cookies()
-        val cookieString = cookiesMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
-        cachedCookies = cookieString
-        return cookieString
-    }
-
     private suspend fun fetchJsonOrNull(url: String): String? {
         return try {
-            val headers = mutableMapOf("Referer" to mainUrl, "User-Agent" to userAgent)
-            getCookies()?.let { headers["Cookie"] = it }
-            val response = app.get(url, headers = headers)
-            val text = response.text
-            if (text.contains("cloudflare", ignoreCase = true) ||
-                text.contains("cf-browser-verification", ignoreCase = true) ||
-                (!text.trimStart().startsWith("{") && !text.trimStart().startsWith("["))
-            ) null else text
+            val response = app.get(url, headers = mapOf("Referer" to mainUrl, "User-Agent" to userAgent)).text
+            if (response.contains("cloudflare", ignoreCase = true) ||
+                response.contains("cf-browser-verification", ignoreCase = true) ||
+                (!response.trimStart().startsWith("{") && !response.trimStart().startsWith("["))
+            ) null else response
         } catch (e: Exception) { null }
     }
 
@@ -190,9 +176,7 @@ class AnimeONProvider : MainAPI() {
     }
 
     private suspend fun getM3U8FromPage(url: String): String {
-        val headers = mutableMapOf("Referer" to mainUrl, "User-Agent" to userAgent)
-        getCookies()?.let { headers["Cookie"] = it }
-        val response = app.get(url, headers = headers)
+        val response = app.get(url, headers = mapOf("Referer" to mainUrl, "User-Agent" to userAgent))
         val html = response.document.select("script").html()
         return fileRegex.find(html)?.groupValues?.get(1) ?: ""
     }
