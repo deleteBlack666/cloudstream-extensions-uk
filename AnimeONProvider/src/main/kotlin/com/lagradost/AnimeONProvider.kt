@@ -90,15 +90,15 @@ class AnimeONProvider : MainAPI() {
         val jsonText = fetchJsonOrNull(apiUrlPath) ?: throw Exception("Не вдалося завантажити інформацію про аніме")
         val animeInfo = try { Gson().fromJson(jsonText, AnimeInfoModel::class.java) } catch (e: Exception) { throw Exception("Помилка парсингу JSON") }
         val animeId = animeInfo.id
+        val expectedEpisodesCount = animeInfo.episodes // може бути 0, якщо немає
 
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
         val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId")
         if (fundubsJson != null) {
             try {
                 val fundubsModel = Gson().fromJson(fundubsJson, FundubsModel::class.java)
-                val fundubs = fundubsModel.fundubs ?: emptyList()
-                if (fundubs.isNotEmpty()) {
-                    val fundub = fundubs[0]
+                val allFundubs = fundubsModel.fundubs ?: emptyList()
+                for (fundub in allFundubs) {
                     val player = fundub.player.firstOrNull()
                     val fundubId = fundub.fundub.id
                     if (player != null) {
@@ -106,16 +106,68 @@ class AnimeONProvider : MainAPI() {
                         val episodesJson = fetchJsonOrNull(episodesUrl)
                         if (episodesJson != null) {
                             val playerEpisodes = Gson().fromJson(episodesJson, PlayerEpisodes::class.java)
-                            playerEpisodes.episodes?.forEach { ep ->
-                                episodes.add(
-                                    newEpisode("$animeId,${ep.episode}") {
-                                        name = "Епізод ${ep.episode}"
-                                        posterUrl = ep.poster
-                                        this.episode = ep.episode
+                            val eps = playerEpisodes.episodes ?: emptyList()
+                            if (eps.isNotEmpty()) {
+                                // Перевіряємо, чи це правильні епізоди
+                                val firstEpNum = eps.first().episode
+                                val lastEpNum = eps.last().episode
+                                val isValid = when {
+                                    firstEpNum == 1 -> true // стандартний випадок
+                                    expectedEpisodesCount > 0 && eps.size <= expectedEpisodesCount + 2 -> true
+                                    eps.size > 0 && eps.size < 500 -> true // запасний варіант
+                                    else -> false
+                                }
+                                if (isValid) {
+                                    episodes.clear()
+                                    eps.forEach { ep ->
+                                        episodes.add(
+                                            newEpisode("$animeId,${ep.episode}") {
+                                                name = "Епізод ${ep.episode}"
+                                                posterUrl = ep.poster
+                                                this.episode = ep.episode
+                                            }
+                                        )
                                     }
-                                )
+                                    break // знайшли правильну озвучку
+                                }
                             }
                         }
+                    }
+                }
+            } catch (e: Exception) { }
+        }
+
+        // Резервний HTML-парсинг, якщо API не дав правильних епізодів
+        if (episodes.isEmpty()) {
+            try {
+                val doc = app.get(url).document
+                val selectors = listOf(
+                    "a[href*='/watch/']",
+                    "a[href*='/episode/']",
+                    ".episodes a",
+                    ".episode-list a"
+                )
+                var episodeElements = org.jsoup.select.Elements()
+                for (selector in selectors) {
+                    val els = doc.select(selector)
+                    if (els.isNotEmpty()) {
+                        episodeElements = els
+                        break
+                    }
+                }
+                episodeElements.forEachIndexed { idx, a ->
+                    val href = a.attr("href")
+                    if (href.isNotBlank()) {
+                        var epNum = Regex("\\d+").find(a.text())?.value?.toIntOrNull()
+                        if (epNum == null) epNum = idx + 1
+                        val fullUrl = if (href.startsWith("/")) mainUrl + href else href
+                        episodes.add(
+                            newEpisode(fullUrl) {
+                                name = "Епізод $epNum"
+                                this.episode = epNum
+                                posterUrl = animeInfo.image.preview
+                            }
+                        )
                     }
                 }
             } catch (e: Exception) { }
