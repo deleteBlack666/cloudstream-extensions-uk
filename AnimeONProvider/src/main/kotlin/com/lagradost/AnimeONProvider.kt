@@ -26,7 +26,6 @@ import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.models.AnimeInfoModel
-import com.lagradost.models.AnimeModel
 import com.lagradost.models.FundubModel
 import com.lagradost.models.FundubVideoUrl
 import com.lagradost.models.NewAnimeModel
@@ -166,8 +165,8 @@ class AnimeONProvider : MainAPI() {
                 this.showStatus = showStatus
                 this.duration = extractIntFromString(animeJSON.episodeTime)
                 this.year = animeJSON.releaseDate.toIntOrNull()
-                this.score = animeJSON.rating.toDoubleOrNull()?.let {
-                    com.lagradost.cloudstream3.Score(it, com.lagradost.cloudstream3.ScoreType.POINTS_10)
+                this.score = animeJSON.rating.toDoubleOrNull()?.times(10)?.toInt()?.let {
+                    com.lagradost.cloudstream3.Score(it)
                 }
                 addEpisodes(DubStatus.Dubbed, episodes)
                 addMalId(animeJSON.malId.toIntOrNull())
@@ -192,8 +191,8 @@ class AnimeONProvider : MainAPI() {
                 this.duration = extractIntFromString(animeJSON.episodeTime)
                 this.year = animeJSON.releaseDate.toIntOrNull()
                 this.backgroundPosterUrl = backgroundImage
-                this.score = animeJSON.rating.toDoubleOrNull()?.let {
-                    com.lagradost.cloudstream3.Score(it, com.lagradost.cloudstream3.ScoreType.POINTS_10)
+                this.score = animeJSON.rating.toDoubleOrNull()?.times(10)?.toInt()?.let {
+                    com.lagradost.cloudstream3.Score(it)
                 }
                 addMalId(animeJSON.malId.toIntOrNull())
             }
