@@ -27,11 +27,11 @@ import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.models.AnimeInfoModel
-import com.lagradost.models.FundubModel
 import com.lagradost.models.FundubVideoUrl
 import com.lagradost.models.FundubsModel
 import com.lagradost.models.NewAnimeModel
 import com.lagradost.models.PlayerEpisodes
+import com.lagradost.models.Results
 import com.lagradost.models.SearchModel
 
 class AnimeONProvider : MainAPI() {
@@ -62,6 +62,8 @@ class AnimeONProvider : MainAPI() {
             "$apiUrl?pageSize=24&pageIndex=%d" to "Нове",
         )
 
+    private val listResults = object : TypeToken<List<Results>>() {}.type
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         if (!request.data.contains("pageIndex") && page != 1) return newHomePageResponse(emptyList())
         val document = app.get(
@@ -69,13 +71,23 @@ class AnimeONProvider : MainAPI() {
             headers = mapOf("Referer" to mainUrl)
         ).text
 
-        val parsedJSON = Gson().fromJson(document, NewAnimeModel::class.java)
-        val homeList = parsedJSON.results.map {
-            newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
-                this.posterUrl = posterApi.format(it.image.preview)
+        if (request.data.contains("pageIndex")) {
+            val parsedJSON = Gson().fromJson(document, NewAnimeModel::class.java)
+            val homeList = parsedJSON.results.map {
+                newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
+                    this.posterUrl = posterApi.format(it.image.preview)
+                }
             }
+            return newHomePageResponse(request.name, homeList)
+        } else {
+            val parsedJSON = Gson().fromJson<List<Results>>(document, listResults)
+            val homeList = parsedJSON.map {
+                newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
+                    this.posterUrl = posterApi.format(it.image.preview)
+                }
+            }
+            return newHomePageResponse(request.name, homeList)
         }
-        return newHomePageResponse(request.name, homeList)
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
@@ -217,15 +229,15 @@ class AnimeONProvider : MainAPI() {
 
         if (dataList.size == 2) {
             fundubs.map { dub ->
+                val episodes = Gson().fromJson(
+                    app.get(
+                        "$mainUrl/api/player/episodes/${dataList[0]}?playerId=${dub.player[0].id}&fundubId=${dub.fundub.id}",
+                        headers = mapOf("Referer" to mainUrl)
+                    ).text, PlayerEpisodes::class.java
+                ).episodes.firstOrNull { it.episode == dataList[1].toIntOrNull() } ?: return@map
+
                 val videoUrl = app.get(
-                    "$mainUrl/api/player/episode/${
-                        Gson().fromJson(
-                            app.get(
-                                "$mainUrl/api/player/episodes/${dataList[0]}?playerId=${dub.player[0].id}&fundubId=${dub.fundub.id}",
-                                headers = mapOf("Referer" to mainUrl)
-                            ).text, PlayerEpisodes::class.java
-                        ).episodes.firstOrNull { it.episode == dataList[1].toIntOrNull() }?.id ?: return@map
-                    }",
+                    "$mainUrl/api/player/episode/${episodes.id}",
                     headers = mapOf("Referer" to mainUrl)
                 ).parsedSafe<FundubVideoUrl>()?.videoUrl ?: return@map
 
