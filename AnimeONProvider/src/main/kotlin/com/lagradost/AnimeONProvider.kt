@@ -9,7 +9,6 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.models.*
 
-// Тимчасові класи для головної сторінки (якщо не вистачає моделей)
 data class TempAnimeItem(val id: Int, val titleUa: String, val image: TempImage?)
 data class TempImage(val preview: String)
 
@@ -44,11 +43,9 @@ class AnimeONProvider : MainAPI() {
                 response.contains("cf-browser-verification", ignoreCase = true) ||
                 (!response.trimStart().startsWith("{") && !response.trimStart().startsWith("["))
             ) {
-                log("Cloudflare blocked: $url")
                 null
             } else response
         } catch (e: Exception) {
-            log("Fetch error $url: ${e.message}")
             null
         }
     }
@@ -58,7 +55,6 @@ class AnimeONProvider : MainAPI() {
         val url = request.data.format(page)
         val json = fetchJsonOrNull(url) ?: return newHomePageResponse(request.name, emptyList())
         val list = try {
-            // Спроба як об'єкт NewAnimeModel
             val model = Gson().fromJson(json, NewAnimeModel::class.java)
             model.results?.mapNotNull { it?.let { r ->
                 newAnimeSearchResponse(r.titleUa, "anime/${r.id}", TvType.Anime) {
@@ -66,7 +62,6 @@ class AnimeONProvider : MainAPI() {
                 }
             } } ?: emptyList()
         } catch (e: Exception) {
-            // Спроба як масив TempAnimeItem
             try {
                 val type = object : TypeToken<Array<TempAnimeItem>>() {}.type
                 Gson().fromJson<Array<TempAnimeItem>>(json, type).map { item ->
@@ -75,7 +70,6 @@ class AnimeONProvider : MainAPI() {
                     }
                 }
             } catch (e2: Exception) {
-                log("Main page parse error: ${e2.message}")
                 emptyList()
             }
         }
@@ -105,19 +99,17 @@ class AnimeONProvider : MainAPI() {
         val anime = try {
             Gson().fromJson(json, AnimeInfoModel::class.java)
         } catch (e: Exception) {
-            throw Exception("JSON parse error: ${e.message}")
+            throw Exception("JSON parse error")
         }
         val id = anime.id ?: throw Exception("Anime ID missing")
 
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
         val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$id")
-        log("Fundubs response for $id: ${fundubsJson?.take(300)}")
         
         if (fundubsJson != null) {
             try {
                 val fundubsModel = Gson().fromJson(fundubsJson, FundubsModel::class.java)
                 val fundubs = fundubsModel.fundubs ?: emptyList()
-                log("Fundubs count: ${fundubs.size}")
                 for (dub in fundubs) {
                     val players = dub.player ?: emptyList()
                     if (players.isNotEmpty()) {
@@ -129,7 +121,6 @@ class AnimeONProvider : MainAPI() {
                             if (epJson != null) {
                                 val epData = Gson().fromJson(epJson, PlayerEpisodes::class.java)
                                 val eps = epData.episodes ?: emptyList()
-                                log("Episodes found: ${eps.size}")
                                 eps.forEach { ep ->
                                     episodes.add(newEpisode("$id, ${ep.episode}") {
                                         name = "Епізод ${ep.episode}"
@@ -144,11 +135,9 @@ class AnimeONProvider : MainAPI() {
                     }
                 }
             } catch (e: Exception) {
-                log("Error loading episodes: ${e.message}")
-                e.printStackTrace()
+                // ignore
             }
         }
-        log("Total episodes loaded: ${episodes.size}")
 
         val status = when {
             anime.status?.contains("ongoing") == true -> ShowStatus.Ongoing
