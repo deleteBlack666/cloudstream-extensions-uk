@@ -13,7 +13,7 @@ import java.net.URLEncoder
 class AnimeONProvider : MainAPI() {
 
     override var mainUrl = "https://animeon.club"
-    override var name = "AnimeON (HTML)"
+    override var name = "AnimeON"
     override val hasMainPage = true
     override var lang = "uk"
     override val hasQuickSearch = true
@@ -92,26 +92,40 @@ class AnimeONProvider : MainAPI() {
         val animeId = animeInfo.id
 
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
-        val document = app.get(url).document
+        val doc = app.get(url).document
 
-        // Шукаємо всі посилання, які містять /watch/, /episode/, /ep/ або мають класи з епізодами
-        var episodeLinks = document.select("a[href*='/watch/'], a[href*='/episode/'], a[href*='/ep/']")
-        if (episodeLinks.isEmpty()) {
-            episodeLinks = document.select(".episodes a, .episode-list a, .series-list a, .video-list a, .season-episodes a")
-        }
-        if (episodeLinks.isEmpty()) {
-            // Остання спроба: всі посилання, чий текст містить цифри та схожі на "Серія 1"
-            episodeLinks = document.select("a").filter {
-                val href = it.attr("href")
-                val text = it.text()
-                (href.contains("/anime/") && !href.contains("/anime/${animeId}")) && text.contains(Regex("\\d"))
+        // Пошук епізодів: перебираємо різні селектори
+        val foundLinks = mutableListOf<org.jsoup.nodes.Element>()
+        val selectors = listOf(
+            "a[href*='/watch/']",
+            "a[href*='/episode/']",
+            "a[href*='/ep/']",
+            ".episodes a",
+            ".episode-list a",
+            ".series-list a",
+            ".season-episodes a"
+        )
+        for (selector in selectors) {
+            val elements = doc.select(selector)
+            if (elements.isNotEmpty()) {
+                foundLinks.addAll(elements.toList())
+                break
             }
         }
-
-        if (episodeLinks.isNotEmpty()) {
-            episodeLinks.forEachIndexed { idx, a ->
+        // Якщо не знайдено, фільтруємо всі посилання
+        if (foundLinks.isEmpty()) {
+            val allLinks = doc.select("a")
+            foundLinks.addAll(allLinks.filter { a ->
                 val href = a.attr("href")
-                if (href.isNotBlank() && !href.contains("/anime/${animeId}")) {
+                val text = a.text()
+                href.contains("/anime/") && !href.contains("/anime/$animeId") && text.contains(Regex("\\d+"))
+            })
+        }
+
+        if (foundLinks.isNotEmpty()) {
+            foundLinks.forEachIndexed { idx, a ->
+                val href = a.attr("href")
+                if (href.isNotBlank()) {
                     var epNum = Regex("(\\d+)").find(a.text())?.value?.toIntOrNull()
                     if (epNum == null) epNum = Regex("(\\d+)").find(href)?.value?.toIntOrNull()
                     if (epNum == null) epNum = idx + 1
@@ -125,10 +139,8 @@ class AnimeONProvider : MainAPI() {
                     )
                 }
             }
-        }
-
-        // Резервний варіант через API (якщо HTML не дав результатів)
-        if (episodes.isEmpty()) {
+        } else {
+            // Резервний API варіант
             val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId")
             if (fundubsJson != null) {
                 try {
@@ -188,10 +200,8 @@ class AnimeONProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Якщо data – URL сторінки епізоду
         if (data.startsWith("http")) {
             val doc = app.get(data).document
-            // Шукаємо file: в script
             val scripts = doc.select("script").eachText().joinToString("\n")
             val match = fileRegex.find(scripts)
             if (match != null) {
@@ -204,7 +214,6 @@ class AnimeONProvider : MainAPI() {
                     }
                 }
             }
-            // Якщо не знайшли, шукаємо iframe
             val iframe = doc.select("iframe[src*='player'], iframe[src*='video']").firstOrNull()
             if (iframe != null) {
                 val iframeUrl = iframe.attr("src")
@@ -225,7 +234,6 @@ class AnimeONProvider : MainAPI() {
             }
             return false
         } else {
-            // Старий API метод (резерв)
             val dataList = data.split(",")
             if (dataList.size < 2) return false
             val animeId = dataList[0].trim().toIntOrNull() ?: return false
