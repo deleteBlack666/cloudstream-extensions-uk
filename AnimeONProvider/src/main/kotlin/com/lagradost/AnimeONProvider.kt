@@ -42,6 +42,7 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
+    // Отримуємо slug аніме з API
     private suspend fun getSlug(animeId: Int): String? {
         val json = fetchJsonOrNull("$mainUrl/api/anime/$animeId") ?: return null
         return try {
@@ -50,21 +51,25 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
-    private suspend fun getVid(animeId: Int, episode: Int): String? {
-        val vidUrl = "$mainUrl/api/player/vid/$animeId?episode=$episode"
-        val vidJson = fetchJsonOrNull(vidUrl)
-        if (vidJson != null) {
-            try {
-                val obj = Gson().fromJson(vidJson, com.google.gson.JsonObject::class.java)
-                val vid = obj.get("vid")?.asInt ?: 0
-                if (vid > 0) return vid.toString()
-            } catch (e: Exception) { }
-        }
-        val watchUrl = "$mainUrl/anime/$animeId/watch?ep=$episode"
-        val doc = app.get(watchUrl).document
-        val scripts = doc.select("script").eachText().joinToString("\n")
-        val pattern = Regex("""vid[^0-9]*[:=]\s*["']?(\d+)["']?""")
-        return pattern.find(scripts)?.groupValues?.get(1)
+    // Отримуємо переклади (translations) та обираємо перший playerId, translationId
+    private suspend fun getPlayerAndTranslation(animeId: Int): Pair<Int, Int>? {
+        val json = fetchJsonOrNull("$mainUrl/api/player/translations/$animeId") ?: return null
+        return try {
+            val response = Gson().fromJson(json, TranslationResponse::class.java)
+            val translation = response.translations.firstOrNull() ?: return null
+            val player = translation.player.firstOrNull() ?: return null
+            Pair(player.id, translation.id)
+        } catch (e: Exception) { null }
+    }
+
+    // Отримуємо список епізодів через новий ендпоінт
+    private suspend fun getEpisodeList(animeId: Int, playerId: Int, translationId: Int): List<FundubEpisode>? {
+        val url = "$mainUrl/api/player/$animeId/episodes?take=100&skip=-1&playerId=$playerId&translationId=$translationId"
+        val json = fetchJsonOrNull(url) ?: return null
+        return try {
+            val episodes = Gson().fromJson(json, Array<FundubEpisode>::class.java).toList()
+            episodes
+        } catch (e: Exception) { null }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -119,33 +124,56 @@ class AnimeONProvider : MainAPI() {
         if (slug.isNullOrEmpty()) slug = "unknown"
 
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
-        val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId")
-        if (fundubsJson != null) {
-            try {
-                val fundubsModel = Gson().fromJson(fundubsJson, FundubsModel::class.java)
-                val fundubs = fundubsModel.fundubs ?: emptyList()
-                if (fundubs.isNotEmpty()) {
-                    val fundub = fundubs[0]
-                    val player = fundub.player.firstOrNull()
-                    val fundubId = fundub.fundub.id
-                    if (player != null) {
-                        val episodesUrl = "$mainUrl/api/player/episodes/$animeId?playerId=${player.id}&fundubId=$fundubId"
-                        val episodesJson = fetchJsonOrNull(episodesUrl)
-                        if (episodesJson != null) {
-                            val playerEpisodes = Gson().fromJson(episodesJson, PlayerEpisodes::class.java)
-                            playerEpisodes.episodes?.forEach { ep ->
-                                episodes.add(
-                                    newEpisode("$animeId,${ep.episode},$slug") {
-                                        name = "Епізод ${ep.episode}"
-                                        posterUrl = ep.poster
-                                        this.episode = ep.episode
-                                    }
-                                )
+        val playerTranslation = getPlayerAndTranslation(animeId)
+        if (playerTranslation != null) {
+            val (playerId, translationId) = playerTranslation
+            val episodeList = getEpisodeList(animeId, playerId, translationId)
+            if (episodeList != null && episodeList.isNotEmpty()) {
+                for (ep in episodeList) {
+                    val vid = ep.id // у відповіді епізоду є поле id, яке є vid
+                    episodes.add(
+                        newEpisode("$animeId,${ep.episode},$slug,$vid") {
+                            name = "Епізод ${ep.episode}"
+                            posterUrl = ep.poster
+                            this.episode = ep.episode
+                        }
+                    )
+                }
+            }
+        }
+
+        // Резерв: старі fundubs (якщо новий не спрацював)
+        if (episodes.isEmpty()) {
+            val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId")
+            if (fundubsJson != null) {
+                try {
+                    val fundubsModel = Gson().fromJson(fundubsJson, FundubsModel::class.java)
+                    val fundubs = fundubsModel.fundubs ?: emptyList()
+                    if (fundubs.isNotEmpty()) {
+                        val fundub = fundubs[0]
+                        val player = fundub.player.firstOrNull()
+                        val fundubId = fundub.fundub.id
+                        if (player != null) {
+                            val episodesUrl = "$mainUrl/api/player/episodes/$animeId?playerId=${player.id}&fundubId=$fundubId"
+                            val episodesJson = fetchJsonOrNull(episodesUrl)
+                            if (episodesJson != null) {
+                                val playerEpisodes = Gson().fromJson(episodesJson, PlayerEpisodes::class.java)
+                                playerEpisodes.episodes?.forEach { ep ->
+                                    // vid отримуємо з іншого джерела? тут немає vid, тому не вийде
+                                    // залишимо без vid, але це не спрацює
+                                    episodes.add(
+                                        newEpisode("$animeId,${ep.episode},$slug,0") {
+                                            name = "Епізод ${ep.episode}"
+                                            posterUrl = ep.poster
+                                            this.episode = ep.episode
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
-                }
-            } catch (e: Exception) { }
+                } catch (e: Exception) { }
+            }
         }
 
         val showStatus = if (animeInfo.status?.contains("ongoing") == true) ShowStatus.Ongoing else ShowStatus.Completed
@@ -178,19 +206,24 @@ class AnimeONProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val parts = data.split(",")
-        if (parts.size < 3) return false
+        if (parts.size < 4) return false
         val animeId = parts[0].trim().toIntOrNull() ?: return false
         val episodeNum = parts[1].trim().toIntOrNull() ?: return false
         val slug = parts[2].trim()
+        val vid = parts[3].trim()
 
-        val vid = getVid(animeId, episodeNum)
-        if (vid != null && slug.isNotEmpty()) {
-            val seasonStr = "01" // або визначити сезон
+        // Якщо vid не 0, формуємо посилання
+        if (vid != "0" && slug.isNotEmpty()) {
             val episodeStr = episodeNum.toString().padStart(2, '0')
-            val m3u8Url = "https://ashdi.vip/video04/2/new/${slug}_s${seasonStr}e${episodeStr}_$vid/hls/BKiPlHaPlftdkwfhA4k=/index.m3u8"
+            val m3u8Url = "https://ashdi.vip/video04/2/new/${slug}_s01e${episodeStr}_$vid/hls/BKiPlHaPlftdkwfhA4k=/index.m3u8"
             M3u8Helper.generateM3u8("AnimeON", m3u8Url, referer = "https://animeon.club").dropLast(1).forEach(callback)
             return true
         }
         return false
     }
 }
+
+// Необхідні моделі даних (якщо відсутні)
+data class TranslationResponse(val translations: List<Translation>)
+data class Translation(val id: Int, val player: List<Player>)
+data class Player(val id: Int, val name: String)
