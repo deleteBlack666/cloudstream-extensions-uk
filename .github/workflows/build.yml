@@ -80,3 +80,4 @@ jobs:
           git add .
           git commit --amend -m "Build $GITHUB_SHA" || exit 0
           git push --force
+
