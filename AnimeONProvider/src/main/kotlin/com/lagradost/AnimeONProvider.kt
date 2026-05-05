@@ -90,7 +90,7 @@ class AnimeONProvider : MainAPI() {
         val animeId = animeJSON.id
 
         val showStatus = if (animeJSON.status.contains("ongoing")) ShowStatus.Ongoing else ShowStatus.Completed
-        val tvType = with(animeJSON.type!!) {
+        val tvType = with(animeJSON.type) {
             when {
                 contains("tv") -> TvType.Anime
                 contains("OVA") || contains("ONA") || contains("Спеціальний випуск") -> TvType.OVA
@@ -99,7 +99,7 @@ class AnimeONProvider : MainAPI() {
             }
         }
 
-        val episodes = mutableListOf<Episode>()
+        val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
         val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId")
         if (fundubsJson != null) {
             try {
@@ -141,10 +141,10 @@ class AnimeONProvider : MainAPI() {
                 addMalId(animeJSON.malId.toIntOrNull())
             }
         } else {
-            var backgroundImage = animeJSON.backgroundImage
-            backgroundImage = if (backgroundImage.isNullOrBlank())
+            val backgroundImage = if (animeJSON.backgroundImage.isNullOrBlank())
                 posterApi.format(animeJSON.image.preview)
-            else posterApi.format(animeJSON.screenshots.first().original)
+            else
+                animeJSON.backgroundImage
 
             newMovieLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType, "$animeId") {
                 this.posterUrl = posterApi.format(animeJSON.image.preview)
@@ -186,7 +186,6 @@ class AnimeONProvider : MainAPI() {
                     .episodes?.firstOrNull { it.episode == dataList[1].toIntOrNull() }
             } catch (e: Exception) { null } ?: return@forEach
 
-            // Використовуємо fileUrl напряму — не треба парсити скрипти!
             val fileUrl = episode.fileUrl
             if (!fileUrl.isNullOrEmpty()) {
                 M3u8Helper.generateM3u8(
