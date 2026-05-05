@@ -30,7 +30,7 @@ class AnimeONProvider : MainAPI() {
     private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
     override val mainPage = mainPageOf(
-        "$apiUrl/popular" to "Популярне",
+        "$apiUrl?pageSize=24&pageIndex=%d&sort=rating" to "Популярне",
         "$apiUrl/seasons" to "Аніме поточного сезону",
         "$apiUrl?pageSize=24&pageIndex=%d" to "Нове",
     )
@@ -49,10 +49,10 @@ class AnimeONProvider : MainAPI() {
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        if (!request.data.contains("pageIndex") && page != 1) return newHomePageResponse(emptyList())
+        if (request.data.contains("seasons") && page != 1) return newHomePageResponse(emptyList())
         val jsonText = fetchJsonOrNull(request.data.format(page)) ?: return newHomePageResponse(request.name, emptyList())
 
-        return if (request.data.contains("pageIndex")) {
+        return if (!request.data.contains("seasons")) {
             val parsedJSON = Gson().fromJson(jsonText, NewAnimeModel::class.java)
             newHomePageResponse(request.name, parsedJSON.results.map {
                 newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
