@@ -37,9 +37,6 @@ class AnimeONProvider : MainAPI() {
 
     private val listResults = object : TypeToken<List<Results>>() {}.type
 
-    // Додано відсутню функцію
-    private fun extractIntFromString(str: String): Int? = Regex("\\d+").find(str)?.value?.toIntOrNull()
-
     private suspend fun fetchJsonOrNull(url: String): String? {
         return try {
             val response = app.get(url, headers = mapOf(
@@ -180,7 +177,6 @@ class AnimeONProvider : MainAPI() {
             Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
         } catch (e: Exception) { return false }
 
-        var success = false
         translations.forEach { item ->
             val translationId = item.translation.id
             for (player in item.player) {
@@ -192,20 +188,19 @@ class AnimeONProvider : MainAPI() {
                         .episodes?.firstOrNull { it.episode == dataList[1].toIntOrNull() }
                 } catch (e: Exception) { null } ?: continue
 
-                // Якщо у вашій моделі FundubEpisode є поля fileUrl або videoUrl – вони будуть використані
-                // Якщо ні – цей код не викличе помилки завдяки safe call
-                val fileUrl = try { episode::class.java.getDeclaredField("fileUrl")?.let { episode.fileUrl as? String } } catch(e: Exception) { null }
+                // Ashdi — використовуємо fileUrl напряму
+                val fileUrl = episode.fileUrl
                 if (!fileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
                         source = "${item.translation.name} (${player.name})",
                         streamUrl = fileUrl,
                         referer = "https://ashdi.vip"
                     ).dropLast(1).forEach(callback)
-                    success = true
-                    return@forEach
+                    break
                 }
 
-                val videoUrl = try { episode::class.java.getDeclaredField("videoUrl")?.let { episode.videoUrl as? String } } catch(e: Exception) { null }
+                // Moon — парсимо iframe
+                val videoUrl = episode.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
                     val m3u8 = getMoonM3U(videoUrl)
                     if (m3u8.isNotEmpty()) {
@@ -214,17 +209,18 @@ class AnimeONProvider : MainAPI() {
                             streamUrl = m3u8,
                             referer = "https://moonanime.art/"
                         ).dropLast(1).forEach(callback)
-                        success = true
-                        return@forEach
+                        break
                     }
                 }
             }
         }
-        return success
+
+        return true
     }
 
     private suspend fun getMoonM3U(iframeUrl: String): String {
         return try {
+            val slug = iframeUrl.substringAfter("/iframe/").substringBefore("/")
             val response = app.get(iframeUrl, headers = mapOf(
                 "Referer" to "https://animeon.club/",
                 "Origin" to "https://animeon.club",
@@ -232,9 +228,15 @@ class AnimeONProvider : MainAPI() {
                 "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"
             ))
-            val html = response.document.html()
-            val regexManifest = Regex("(https://s\\.moonanime\\.art/content/stream/[^\"'\\s]+\\.m3u8[^\"'\\s]*)")
-            regexManifest.find(html)?.groupValues?.get(1) ?: ""
+            val html = response.body.string()
+            val regexManifest = Regex("https://s\\.moonanime\\.art/content/stream/anime/\\d+/$slug/hls/[^\"'\\s]+\\.m3u8[^\"'\\s]*")
+            regexManifest.find(html)?.value ?: ""
         } catch (e: Exception) { "" }
+    }
+
+    private fun extractIntFromString(string: String): Int? {
+        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
+        if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
+        return value.value.toIntOrNull()
     }
 }
