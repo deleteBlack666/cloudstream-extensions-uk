@@ -99,7 +99,7 @@ class AnimeONProvider : MainAPI() {
             }
         }
 
-        val episodes = mutableListOf<Episode>()
+        val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
 
         val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
         if (translationsJson != null) {
@@ -145,7 +145,7 @@ class AnimeONProvider : MainAPI() {
                 addMalId(animeJSON.malId.toIntOrNull())
             }
         } else {
-            val backgroundImage = animeJSON.backgroundImage.takeIf { it.isNotBlank() }
+            val backgroundImage = animeJSON.backgroundImage.takeIf { !it.isNullOrBlank() }
                 ?: posterApi.format(animeJSON.image.preview)
 
             newMovieLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType, "$animeId") {
