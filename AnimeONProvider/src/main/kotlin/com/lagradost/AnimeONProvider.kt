@@ -232,4 +232,5 @@ class AnimeONProvider : MainAPI() {
         val regexManifest = Regex("(https://s\\.moonanime\\.art/content/stream/[^\"'\\s]+\\.m3u8[^\"'\\s]*)")
         regexManifest.find(html)?.groupValues?.get(1) ?: ""
     } catch (e: Exception) { "" }
-    }
+     }
+}
