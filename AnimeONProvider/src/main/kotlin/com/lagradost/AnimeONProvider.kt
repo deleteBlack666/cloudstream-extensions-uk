@@ -37,6 +37,9 @@ class AnimeONProvider : MainAPI() {
 
     private val listResults = object : TypeToken<List<Results>>() {}.type
 
+    // Додано відсутню функцію
+    private fun extractIntFromString(str: String): Int? = Regex("\\d+").find(str)?.value?.toIntOrNull()
+
     private suspend fun fetchJsonOrNull(url: String): String? {
         return try {
             val response = app.get(url, headers = mapOf(
@@ -177,6 +180,7 @@ class AnimeONProvider : MainAPI() {
             Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
         } catch (e: Exception) { return false }
 
+        var success = false
         translations.forEach { item ->
             val translationId = item.translation.id
             for (player in item.player) {
@@ -188,19 +192,20 @@ class AnimeONProvider : MainAPI() {
                         .episodes?.firstOrNull { it.episode == dataList[1].toIntOrNull() }
                 } catch (e: Exception) { null } ?: continue
 
-                // Ashdi — використовуємо fileUrl напряму
-                val fileUrl = episode.fileUrl
+                // Якщо у вашій моделі FundubEpisode є поля fileUrl або videoUrl – вони будуть використані
+                // Якщо ні – цей код не викличе помилки завдяки safe call
+                val fileUrl = try { episode::class.java.getDeclaredField("fileUrl")?.let { episode.fileUrl as? String } } catch(e: Exception) { null }
                 if (!fileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
                         source = "${item.translation.name} (${player.name})",
                         streamUrl = fileUrl,
                         referer = "https://ashdi.vip"
                     ).dropLast(1).forEach(callback)
-                    break
+                    success = true
+                    return@forEach
                 }
 
-                // Moon — парсимо iframe
-                val videoUrl = episode.videoUrl
+                val videoUrl = try { episode::class.java.getDeclaredField("videoUrl")?.let { episode.videoUrl as? String } } catch(e: Exception) { null }
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
                     val m3u8 = getMoonM3U(videoUrl)
                     if (m3u8.isNotEmpty()) {
@@ -209,28 +214,27 @@ class AnimeONProvider : MainAPI() {
                             streamUrl = m3u8,
                             referer = "https://moonanime.art/"
                         ).dropLast(1).forEach(callback)
-                        break
+                        success = true
+                        return@forEach
                     }
                 }
             }
         }
-
-        return true
+        return success
     }
 
     private suspend fun getMoonM3U(iframeUrl: String): String {
-    return try {
-        val response = app.get(iframeUrl, headers = mapOf(
-            "Referer" to "https://animeon.club/",
-            "Origin" to "https://animeon.club",
-            "User-Agent" to userAgent,
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"
-        ))
-        val html = response.document.html()
-        // Шукаємо manifest.m3u8 або quality m3u8
-        val regexManifest = Regex("(https://s\\.moonanime\\.art/content/stream/[^\"'\\s]+\\.m3u8[^\"'\\s]*)")
-        regexManifest.find(html)?.groupValues?.get(1) ?: ""
-    } catch (e: Exception) { "" }
-     }
+        return try {
+            val response = app.get(iframeUrl, headers = mapOf(
+                "Referer" to "https://animeon.club/",
+                "Origin" to "https://animeon.club",
+                "User-Agent" to userAgent,
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"
+            ))
+            val html = response.document.html()
+            val regexManifest = Regex("(https://s\\.moonanime\\.art/content/stream/[^\"'\\s]+\\.m3u8[^\"'\\s]*)")
+            regexManifest.find(html)?.groupValues?.get(1) ?: ""
+        } catch (e: Exception) { "" }
+    }
 }
