@@ -27,7 +27,7 @@ class AnimeONProvider : MainAPI() {
     private val apiUrl = "$mainUrl/api/anime"
     private val posterApi = "$mainUrl/api/uploads/images/%s"
     private val searchApi = "$apiUrl/search?text="
-    private val userAgent = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
+    private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
 
     override val mainPage = mainPageOf(
         "$apiUrl?pageSize=24&pageIndex=%d&sort=rating" to "Популярне",
@@ -188,28 +188,33 @@ class AnimeONProvider : MainAPI() {
                         .episodes?.firstOrNull { it.episode == dataList[1].toIntOrNull() }
                 } catch (e: Exception) { null } ?: continue
 
-                // Ashdi — використовуємо fileUrl напряму
+                // Ashdi
                 val fileUrl = episode.fileUrl
                 if (!fileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
                         source = "${item.translation.name} (${player.name})",
                         streamUrl = fileUrl,
                         referer = "https://ashdi.vip"
-                    ).dropLast(1).forEach(callback)
-                    break
+                    ).forEach(callback)
                 }
 
-                // Moon — парсимо iframe
+                // Moon — виправлена логіка
                 val videoUrl = episode.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
-                    val m3u8 = getMoonM3U(videoUrl)
-                    if (m3u8.isNotEmpty()) {
+                    val m3u8Url = getMoonM3U(videoUrl)
+                    if (m3u8Url.isNotEmpty()) {
+                        // КЛЮЧОВЕ ВИПРАВЛЕННЯ: Додаємо Origin та Referer для CDN
+                        val moonHeaders = mapOf(
+                            "Origin" to "https://moonanime.art",
+                            "Referer" to "https://moonanime.art/"
+                        )
+                        
                         M3u8Helper.generateM3u8(
-                            source = "${item.translation.name} (${player.name})",
-                            streamUrl = m3u8,
-                            referer = "https://moonanime.art/"
-                        ).dropLast(1).forEach(callback)
-                        break
+                            source = "Moon: ${item.translation.name}",
+                            streamUrl = m3u8Url,
+                            referer = "https://moonanime.art/",
+                            headers = moonHeaders // Тепер плеєр знатиме як стукати до сервера
+                        ).forEach(callback)
                     }
                 }
             }
@@ -220,17 +225,15 @@ class AnimeONProvider : MainAPI() {
 
     private suspend fun getMoonM3U(iframeUrl: String): String {
         return try {
-            val slug = iframeUrl.substringAfter("/iframe/").substringBefore("/")
             val response = app.get(iframeUrl, headers = mapOf(
                 "Referer" to "https://animeon.club/",
-                "Origin" to "https://animeon.club",
-                "User-Agent" to userAgent,
-                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"
+                "User-Agent" to userAgent
             ))
-            val html = response.body.string()
-            val regexManifest = Regex("https://s\\.moonanime\\.art/content/stream/anime/\\d+/$slug/hls/[^\"'\\s]+\\.m3u8[^\"'\\s]*")
-            regexManifest.find(html)?.value ?: ""
+            val html = response.text
+            
+            // Більш гнучка регулярка для пошуку m3u8 на s.moonanime.art
+            val regex = """https?://s\.moonanime\.art/content/stream/[^"']+\.m3u8[^"']*""".toRegex()
+            regex.find(html)?.value ?: ""
         } catch (e: Exception) { "" }
     }
 
