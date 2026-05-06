@@ -188,6 +188,7 @@ class AnimeONProvider : MainAPI() {
                         .episodes?.firstOrNull { it.episode == dataList[1].toIntOrNull() }
                 } catch (e: Exception) { null } ?: continue
 
+                // Ashdi — використовуємо fileUrl напряму
                 val fileUrl = episode.fileUrl
                 if (!fileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
@@ -197,10 +198,36 @@ class AnimeONProvider : MainAPI() {
                     ).dropLast(1).forEach(callback)
                     break
                 }
+
+                // Moon — парсимо iframe
+                val videoUrl = episode.videoUrl
+                if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
+                    val m3u8 = getMoonM3U(videoUrl)
+                    if (m3u8.isNotEmpty()) {
+                        M3u8Helper.generateM3u8(
+                            source = "${item.translation.name} (${player.name})",
+                            streamUrl = m3u8,
+                            referer = "https://moonanime.art/"
+                        ).dropLast(1).forEach(callback)
+                        break
+                    }
+                }
             }
         }
 
         return true
+    }
+
+    private suspend fun getMoonM3U(iframeUrl: String): String {
+        return try {
+            val response = app.get(iframeUrl, headers = mapOf(
+                "Referer" to mainUrl,
+                "User-Agent" to userAgent
+            ))
+            val html = response.document.select("script").html()
+            val regex = Regex("https://s\\.moonanime\\.art/content/stream/[^\"']+\\.m3u8")
+            regex.find(html)?.value ?: ""
+        } catch (e: Exception) { "" }
     }
 
     private fun extractIntFromString(string: String): Int? {
