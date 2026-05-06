@@ -12,5 +12,6 @@ data class FundubEpisode (
     @SerializedName("episode") val episode : Int,
     @SerializedName("subtitles") val subtitles : Boolean,
     @SerializedName("poster") val poster : String,
-    @SerializedName("fileUrl") val fileUrl : String?
+    @SerializedName("fileUrl") val fileUrl : String?,
+    @SerializedName("videoUrl") val videoUrl : String?
 )
