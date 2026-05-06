@@ -100,14 +100,14 @@ class AnimeONProvider : MainAPI() {
         }
 
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
-        val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/$animeId")
-        if (fundubsJson != null) {
+        val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
+        if (translationsJson != null) {
             try {
-                val fundubs = Gson().fromJson(fundubsJson, FundubsModel::class.java).fundubs
-                if (fundubs.isNotEmpty()) {
-                    val firstFundub = fundubs[0]
-                    val playerId = firstFundub.player.firstOrNull()?.id
-                    val translationId = firstFundub.fundub.id
+                val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
+                if (translations.isNotEmpty()) {
+                    val first = translations[0]
+                    val playerId = first.player.firstOrNull()?.id
+                    val translationId = first.translation.id
                     if (playerId != null) {
                         val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=-1&playerId=$playerId&translationId=$translationId"
                         val epJson = fetchJsonOrNull(epUrl)
@@ -169,14 +169,14 @@ class AnimeONProvider : MainAPI() {
         val dataList = data.split(", ")
         if (dataList.size < 2) return false
 
-        val fundubsJson = fetchJsonOrNull("$mainUrl/api/player/fundubs/${dataList[0]}") ?: return false
-        val fundubs = try {
-            Gson().fromJson(fundubsJson, FundubsModel::class.java).fundubs
+        val translationsJson = fetchJsonOrNull("$mainUrl/api/player/${dataList[0]}/translations") ?: return false
+        val translations = try {
+            Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
         } catch (e: Exception) { return false }
 
-        fundubs.forEach { dub ->
-            val player = dub.player.firstOrNull() ?: return@forEach
-            val translationId = dub.fundub.id
+        translations.forEach { item ->
+            val player = item.player.firstOrNull() ?: return@forEach
+            val translationId = item.translation.id
 
             val epUrl = "$mainUrl/api/player/${dataList[0]}/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
             val epJson = fetchJsonOrNull(epUrl) ?: return@forEach
@@ -189,7 +189,7 @@ class AnimeONProvider : MainAPI() {
             val fileUrl = episode.fileUrl
             if (!fileUrl.isNullOrEmpty()) {
                 M3u8Helper.generateM3u8(
-                    source = "${dub.fundub.name} (${player.name})",
+                    source = "${item.translation.name} (${player.name})",
                     streamUrl = fileUrl,
                     referer = "https://ashdi.vip"
                 ).dropLast(1).forEach(callback)
