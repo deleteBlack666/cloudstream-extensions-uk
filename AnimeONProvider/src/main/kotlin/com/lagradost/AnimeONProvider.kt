@@ -186,12 +186,3 @@ class AnimeONProvider : MainAPI() {
                 val episode = try {
                     Gson().fromJson(epJson, PlayerEpisodes::class.java)
                         .episodes?.firstOrNull { it.episode == dataList[1].toIntOrNull() }
-                } catch (e: Exception) { null } ?: continue
-
-                // Ashdi — використовуємо fileUrl напряму
-                val fileUrl = episode.fileUrl
-                if (!fileUrl.isNullOrEmpty()) {
-                    M3u8Helper.generateM3u8(
-                        source = "${item.translation.name} (${player.name})",
-                        streamUrl = fileUrl,
-                        referer
