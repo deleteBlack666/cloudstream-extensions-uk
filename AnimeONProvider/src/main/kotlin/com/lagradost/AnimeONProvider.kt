@@ -39,17 +39,15 @@ class AnimeONProvider : MainAPI() {
 
     private suspend fun fetchJsonOrNull(url: String): String? {
         return try {
-            val response = app.get(url, headers = mapOf(
+            app.get(url, headers = mapOf(
                 "Referer" to mainUrl,
                 "User-Agent" to userAgent
             )).text
-            if (!response.trimStart().startsWith("{") && !response.trimStart().startsWith("[")) null
-            else response
         } catch (e: Exception) { null }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        if (request.data.contains("seasons") && page != 1) return newHomePageResponse(emptyList())
+        if (request.data.contains("seasons") && page != 1) return newHomePageResponse(request.name, emptyList())
         val jsonText = fetchJsonOrNull(request.data.format(page)) ?: return newHomePageResponse(request.name, emptyList())
 
         return if (!request.data.contains("seasons")) {
@@ -99,7 +97,7 @@ class AnimeONProvider : MainAPI() {
             }
         }
 
-        val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
+        val episodes = mutableListOf<Episode>()
         val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
         if (translationsJson != null) {
             try {
@@ -188,7 +186,7 @@ class AnimeONProvider : MainAPI() {
                         .episodes?.firstOrNull { it.episode == dataList[1].toIntOrNull() }
                 } catch (e: Exception) { null } ?: continue
 
-                // Ashdi — прямий fileUrl
+                // Ashdi
                 val fileUrl = episode.fileUrl
                 if (!fileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
@@ -196,10 +194,9 @@ class AnimeONProvider : MainAPI() {
                         streamUrl = fileUrl,
                         referer = "https://ashdi.vip"
                     ).dropLast(1).forEach(callback)
-                    // continue (можна додати break, якщо хочеш тільки один плеєр)
                 }
 
-                // Moon — покращена обробка
+                // Moon — покращена версія
                 val videoUrl = episode.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
                     val m3u8 = getMoonM3U(videoUrl)
@@ -224,22 +221,16 @@ class AnimeONProvider : MainAPI() {
                 "Referer" to "https://animeon.club/",
                 "Origin" to "https://animeon.club",
                 "User-Agent" to userAgent,
-                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
             ))
 
             val html = response.body.string()
 
-            // Більш гнучкий regex — ловить обидва варіанти, які ти надіслав
+            // Raw strings — вирішення проблеми escape sequence
             val regex = Regex("""https://s\.moonanime\.art/content/stream/anime/\d+/[a-zA-Z0-9]+/hls/[^"'\s<>]+?\.m3u8[^"'\s<>]*""")
 
-            val match = regex.find(html)?.value
-
-            if (!match.isNullOrEmpty()) {
-                match
-            } else {
-                // Альтернативний пошук (якщо m3u8 в JSON або іншому форматі)
-                val broadRegex = Regex("""(https://s\.moonanime\.art[^\s"']+\.m3u8[^\s"']*)""")
+            regex.find(html)?.value ?: run {
+                val broadRegex = Regex("""https://s\.moonanime\.art[^\s"']+\.m3u8[^\s"']*""")
                 broadRegex.find(html)?.value ?: ""
             }
         } catch (e: Exception) {
@@ -248,8 +239,6 @@ class AnimeONProvider : MainAPI() {
     }
 
     private fun extractIntFromString(string: String): Int? {
-        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
-        if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
-        return value.value.toIntOrNull()
+        return Regex("""\d+""").findAll(string).lastOrNull()?.value?.toIntOrNull()
     }
 }
