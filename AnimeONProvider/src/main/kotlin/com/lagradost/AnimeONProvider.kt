@@ -108,7 +108,7 @@ class AnimeONProvider : MainAPI() {
                     val first = translations[0]
                     val translationId = first.translation.id
                     for (player in first.player) {
-                        val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
+                        val epUrl = "$mainUrl/api/player/\( animeId/episodes?take=100&skip=-1&playerId= \){player.id}&translationId=$translationId"
                         val epJson = fetchJsonOrNull(epUrl)
                         if (epJson != null) {
                             val eps = Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
@@ -172,7 +172,7 @@ class AnimeONProvider : MainAPI() {
         val dataList = data.split(", ")
         if (dataList.size < 2) return false
 
-        val translationsJson = fetchJsonOrNull("$mainUrl/api/player/${dataList[0]}/translations") ?: return false
+        val translationsJson = fetchJsonOrNull("\( mainUrl/api/player/ \){dataList[0]}/translations") ?: return false
         val translations = try {
             Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
         } catch (e: Exception) { return false }
@@ -180,7 +180,7 @@ class AnimeONProvider : MainAPI() {
         translations.forEach { item ->
             val translationId = item.translation.id
             for (player in item.player) {
-                val epUrl = "$mainUrl/api/player/${dataList[0]}/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
+                val epUrl = "\( mainUrl/api/player/ \){dataList[0]}/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
                 val epJson = fetchJsonOrNull(epUrl) ?: continue
 
                 val episode = try {
@@ -188,28 +188,27 @@ class AnimeONProvider : MainAPI() {
                         .episodes?.firstOrNull { it.episode == dataList[1].toIntOrNull() }
                 } catch (e: Exception) { null } ?: continue
 
-                // Ashdi — використовуємо fileUrl напряму
+                // Ashdi — прямий fileUrl
                 val fileUrl = episode.fileUrl
                 if (!fileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
-                        source = "${item.translation.name} (${player.name})",
+                        source = "\( {item.translation.name} ( \){player.name}) - Ashdi",
                         streamUrl = fileUrl,
                         referer = "https://ashdi.vip"
                     ).dropLast(1).forEach(callback)
-                    break
+                    // continue (можна додати break, якщо хочеш тільки один плеєр)
                 }
 
-                // Moon — парсимо iframe
+                // Moon — покращена обробка
                 val videoUrl = episode.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
                     val m3u8 = getMoonM3U(videoUrl)
                     if (m3u8.isNotEmpty()) {
                         M3u8Helper.generateM3u8(
-                            source = "${item.translation.name} (${player.name})",
+                            source = "\( {item.translation.name} ( \){player.name}) - Moon",
                             streamUrl = m3u8,
                             referer = "https://moonanime.art/"
                         ).dropLast(1).forEach(callback)
-                        break
                     }
                 }
             }
@@ -218,9 +217,9 @@ class AnimeONProvider : MainAPI() {
         return true
     }
 
+    /** Покращена функція для Moon */
     private suspend fun getMoonM3U(iframeUrl: String): String {
         return try {
-            val slug = iframeUrl.substringAfter("/iframe/").substringBefore("/")
             val response = app.get(iframeUrl, headers = mapOf(
                 "Referer" to "https://animeon.club/",
                 "Origin" to "https://animeon.club",
@@ -228,10 +227,24 @@ class AnimeONProvider : MainAPI() {
                 "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"
             ))
+
             val html = response.body.string()
-            val regexManifest = Regex("https://s\\.moonanime\\.art/content/stream/anime/\\d+/$slug/hls/[^\"'\\s]+\\.m3u8[^\"'\\s]*")
-            regexManifest.find(html)?.value ?: ""
-        } catch (e: Exception) { "" }
+
+            // Більш гнучкий regex — ловить обидва варіанти, які ти надіслав
+            val regex = Regex("""https://s\.moonanime\.art/content/stream/anime/\d+/[a-zA-Z0-9]+/hls/[^"'\s<>]+?\.m3u8[^"'\s<>]*""")
+
+            val match = regex.find(html)?.value
+
+            if (!match.isNullOrEmpty()) {
+                match
+            } else {
+                // Альтернативний пошук (якщо m3u8 в JSON або іншому форматі)
+                val broadRegex = Regex("""(https://s\.moonanime\.art[^\s"']+\.m3u8[^\s"']*)""")
+                broadRegex.find(html)?.value ?: ""
+            }
+        } catch (e: Exception) {
+            ""
+        }
     }
 
     private fun extractIntFromString(string: String): Int? {
