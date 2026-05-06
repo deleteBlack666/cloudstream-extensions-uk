@@ -106,19 +106,22 @@ class AnimeONProvider : MainAPI() {
                 val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
                 if (translations.isNotEmpty()) {
                     val first = translations[0]
-                    val playerId = first.player.firstOrNull()?.id
                     val translationId = first.translation.id
-                    if (playerId != null) {
-                        val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=-1&playerId=$playerId&translationId=$translationId"
+                    for (player in first.player) {
+                        val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
                         val epJson = fetchJsonOrNull(epUrl)
                         if (epJson != null) {
-                            Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes?.forEach { ep ->
-                                episodes.add(newEpisode("$animeId, ${ep.episode}") {
-                                    this.name = "Епізод ${ep.episode}"
-                                    this.posterUrl = ep.poster
-                                    this.episode = ep.episode
-                                    this.data = "$animeId, ${ep.episode}"
-                                })
+                            val eps = Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
+                            if (!eps.isNullOrEmpty()) {
+                                eps.forEach { ep ->
+                                    episodes.add(newEpisode("$animeId, ${ep.episode}") {
+                                        this.name = "Епізод ${ep.episode}"
+                                        this.posterUrl = ep.poster
+                                        this.episode = ep.episode
+                                        this.data = "$animeId, ${ep.episode}"
+                                    })
+                                }
+                                break
                             }
                         }
                     }
@@ -175,24 +178,25 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { return false }
 
         translations.forEach { item ->
-            val player = item.player.firstOrNull() ?: return@forEach
             val translationId = item.translation.id
+            for (player in item.player) {
+                val epUrl = "$mainUrl/api/player/${dataList[0]}/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
+                val epJson = fetchJsonOrNull(epUrl) ?: continue
 
-            val epUrl = "$mainUrl/api/player/${dataList[0]}/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
-            val epJson = fetchJsonOrNull(epUrl) ?: return@forEach
+                val episode = try {
+                    Gson().fromJson(epJson, PlayerEpisodes::class.java)
+                        .episodes?.firstOrNull { it.episode == dataList[1].toIntOrNull() }
+                } catch (e: Exception) { null } ?: continue
 
-            val episode = try {
-                Gson().fromJson(epJson, PlayerEpisodes::class.java)
-                    .episodes?.firstOrNull { it.episode == dataList[1].toIntOrNull() }
-            } catch (e: Exception) { null } ?: return@forEach
-
-            val fileUrl = episode.fileUrl
-            if (!fileUrl.isNullOrEmpty()) {
-                M3u8Helper.generateM3u8(
-                    source = "${item.translation.name} (${player.name})",
-                    streamUrl = fileUrl,
-                    referer = "https://ashdi.vip"
-                ).dropLast(1).forEach(callback)
+                val fileUrl = episode.fileUrl
+                if (!fileUrl.isNullOrEmpty()) {
+                    M3u8Helper.generateM3u8(
+                        source = "${item.translation.name} (${player.name})",
+                        streamUrl = fileUrl,
+                        referer = "https://ashdi.vip"
+                    ).dropLast(1).forEach(callback)
+                    break
+                }
             }
         }
 
