@@ -84,10 +84,10 @@ class AnimeONProvider : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val jsonText = fetchJsonOrNull(url.replace("/anime/", "/api/anime/"))
+        val animeId = url.substringAfterLast("/").substringBefore("-").toInt()
+        val jsonText = fetchJsonOrNull("$apiUrl/$animeId")
             ?: throw Exception("Failed to load")
         val animeJSON = Gson().fromJson(jsonText, AnimeInfoModel::class.java)
-        val animeId = animeJSON.id
 
         val showStatus = if (animeJSON.status.contains("ongoing")) ShowStatus.Ongoing else ShowStatus.Completed
         val tvType = with(animeJSON.type) {
