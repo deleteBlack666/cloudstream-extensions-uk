@@ -198,22 +198,22 @@ class AnimeONProvider : MainAPI() {
                     ).forEach(callback)
                 }
 
-                // Moon — виправлена логіка
+                // Moon
                 val videoUrl = episode.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
                     val m3u8Url = getMoonM3U(videoUrl)
                     if (m3u8Url.isNotEmpty()) {
-                        // КЛЮЧОВЕ ВИПРАВЛЕННЯ: Додаємо Origin та Referer для CDN
                         val moonHeaders = mapOf(
                             "Origin" to "https://moonanime.art",
-                            "Referer" to "https://moonanime.art/"
+                            "Referer" to "https://moonanime.art/",
+                            "Accept" to "*/*"
                         )
                         
                         M3u8Helper.generateM3u8(
                             source = "Moon: ${item.translation.name}",
-                            streamUrl = m3u8Url,
+                            streamUrl = m3u8Url, // Виправлено назву параметра
                             referer = "https://moonanime.art/",
-                            headers = moonHeaders // Тепер плеєр знатиме як стукати до сервера
+                            headers = moonHeaders
                         ).forEach(callback)
                     }
                 }
@@ -231,7 +231,7 @@ class AnimeONProvider : MainAPI() {
             ))
             val html = response.text
             
-            // Більш гнучка регулярка для пошуку m3u8 на s.moonanime.art
+            // Універсальна регулярка для пошуку маніфесту
             val regex = """https?://s\.moonanime\.art/content/stream/[^"']+\.m3u8[^"']*""".toRegex()
             regex.find(html)?.value ?: ""
         } catch (e: Exception) { "" }
