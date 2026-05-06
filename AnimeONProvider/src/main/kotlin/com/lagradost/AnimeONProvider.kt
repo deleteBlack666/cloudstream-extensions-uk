@@ -99,7 +99,7 @@ class AnimeONProvider : MainAPI() {
             }
         }
 
-        val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
+        val episodes = mutableListOf<Episode>()
 
         val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
         if (translationsJson != null) {
@@ -145,10 +145,8 @@ class AnimeONProvider : MainAPI() {
                 addMalId(animeJSON.malId.toIntOrNull())
             }
         } else {
-            val backgroundImage = if (animeJSON.backgroundImage.isNullOrBlank())
-                posterApi.format(animeJSON.image.preview)
-            else
-                animeJSON.backgroundImage
+            val backgroundImage = animeJSON.backgroundImage.takeIf { it.isNotBlank() }
+                ?: posterApi.format(animeJSON.image.preview)
 
             newMovieLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType, "$animeId") {
                 posterUrl = posterApi.format(animeJSON.image.preview)
@@ -198,7 +196,7 @@ class AnimeONProvider : MainAPI() {
                     ).dropLast(1).forEach(callback)
                 }
 
-                // Moon — покращена обробка
+                // Moon
                 episode.videoUrl?.let { videoUrl ->
                     if (videoUrl.contains("moonanime.art")) {
                         val m3u8 = getMoonM3U(videoUrl)
@@ -226,7 +224,6 @@ class AnimeONProvider : MainAPI() {
 
             val html = response.body.string()
 
-            // Raw strings — без помилок escape
             val regex = Regex("""https://s\.moonanime\.art/content/stream/anime/\d+/[a-zA-Z0-9]+/hls/[^"'\s<>]+?\.m3u8[^"'\s<>]*""")
             regex.find(html)?.value ?: run {
                 val broadRegex = Regex("""https://s\.moonanime\.art[^\s"']+\.m3u8[^\s"']*""")
