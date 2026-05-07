@@ -105,9 +105,9 @@ class AnimeONProvider : MainAPI() {
             try {
                 val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
                 if (translations.isNotEmpty()) {
-                    val first = translations[0]
-                    val translationId = first.translation.id
-                    for (player in first.player) {
+                    val best = translations.maxByOrNull { t -> t.player.maxOfOrNull { it.episodesCount } ?: 0 } ?: translations[0]
+val translationId = best.translation.id
+for (player in best.player.sortedByDescending { it.episodesCount }) {
                         val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
                         val epJson = fetchJsonOrNull(epUrl)
                         if (epJson != null) {
