@@ -30,7 +30,7 @@ class AnimeONProvider : MainAPI() {
     private val userAgent = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
 
     override val mainPage = mainPageOf(
-        "$apiUrl?pageSize=24&pageIndex=%d&sort=rating" to "Популярне", //треба пофіксити дублювання  Нове аніме на сайті
+        "$apiUrl?pageSize=24&pageIndex=%d&sort=rating" to "Популярне",
         "$apiUrl/seasons" to "Аніме поточного сезону",
         "$apiUrl?pageSize=24&pageIndex=%d" to "Нове аніме на сайті",
     )
@@ -106,8 +106,8 @@ class AnimeONProvider : MainAPI() {
                 val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
                 if (translations.isNotEmpty()) {
                     val best = translations.maxByOrNull { t -> t.player.maxOfOrNull { it.episodesCount } ?: 0 } ?: translations[0]
-val translationId = best.translation.id
-for (player in best.player.sortedByDescending { it.episodesCount }) {
+                    val translationId = best.translation.id
+                    for (player in best.player.sortedByDescending { it.episodesCount }) {
                         val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
                         val epJson = fetchJsonOrNull(epUrl)
                         if (epJson != null) {
@@ -188,7 +188,6 @@ for (player in best.player.sortedByDescending { it.episodesCount }) {
                         .episodes?.firstOrNull { it.episode == dataList[1].toIntOrNull() }
                 } catch (e: Exception) { null } ?: continue
 
-                // Ashdi — використовуємо fileUrl напряму
                 val fileUrl = episode.fileUrl
                 if (!fileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
@@ -199,7 +198,6 @@ for (player in best.player.sortedByDescending { it.episodesCount }) {
                     break
                 }
 
-                // Moon — парсимо iframe
                 val videoUrl = episode.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
                     val m3u8 = getMoonM3U(videoUrl)
@@ -219,19 +217,25 @@ for (player in best.player.sortedByDescending { it.episodesCount }) {
     }
 
     private suspend fun getMoonM3U(iframeUrl: String): String {
-    return try {
-        val response = app.get(iframeUrl, headers = mapOf(
-            "User-Agent" to userAgent,
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
-            "sec-fetch-site" to "none",
-            "sec-fetch-mode" to "navigate",
-            "sec-fetch-dest" to "document",
-            "upgrade-insecure-requests" to "1"
-        ))
-        val html = response.text
-        val regex = Regex("(https://s\\.moonanime\\.art/content/stream/[^\"'\\s<>]+\\.m3u8(?:[^\"'\\s<>]*)?)")
-        regex.find(html)?.groupValues?.get(1) ?: ""
-    } catch (e: Exception) { "" }
-     }
+        return try {
+            val response = app.get(iframeUrl, headers = mapOf(
+                "User-Agent" to userAgent,
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
+                "sec-fetch-site" to "none",
+                "sec-fetch-mode" to "navigate",
+                "sec-fetch-dest" to "document",
+                "upgrade-insecure-requests" to "1"
+            ))
+            val html = response.text
+            val regex = Regex("(https://s\\.moonanime\\.art/content/stream/[^\"'\\s<>]+\\.m3u8(?:[^\"'\\s<>]*)?)")
+            regex.find(html)?.groupValues?.get(1) ?: ""
+        } catch (e: Exception) { "" }
+    }
+
+    private fun extractIntFromString(string: String): Int? {
+        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
+        if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
+        return value.value.toIntOrNull()
+    }
 }
