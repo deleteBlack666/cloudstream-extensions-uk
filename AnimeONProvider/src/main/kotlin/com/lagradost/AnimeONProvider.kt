@@ -233,4 +233,5 @@ for (player in best.player.sortedByDescending { it.episodesCount }) {
         val regex = Regex("(https://s\\.moonanime\\.art/content/stream/[^\"'\\s<>]+\\.m3u8(?:[^\"'\\s<>]*)?)")
         regex.find(html)?.groupValues?.get(1) ?: ""
     } catch (e: Exception) { "" }
-    }
+     }
+}
