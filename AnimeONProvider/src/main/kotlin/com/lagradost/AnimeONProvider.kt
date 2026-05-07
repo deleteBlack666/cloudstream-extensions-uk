@@ -219,24 +219,18 @@ for (player in best.player.sortedByDescending { it.episodesCount }) {
     }
 
     private suspend fun getMoonM3U(iframeUrl: String): String {
-        return try {
-            val slug = iframeUrl.substringAfter("/iframe/").substringBefore("/")
-            val response = app.get(iframeUrl, headers = mapOf(
-                "Referer" to "https://animeon.club/",
-                "Origin" to "https://animeon.club",
-                "User-Agent" to userAgent,
-                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"
-            ))
-            val html = response.body.string()
-            val regexManifest = Regex("https://s\\.moonanime\\.art/content/stream/anime/\\d+/$slug/hls/[^\"'\\s]+\\.m3u8[^\"'\\s]*")
-            regexManifest.find(html)?.value ?: ""
-        } catch (e: Exception) { "" }
+    return try {
+        val response = app.get(iframeUrl, headers = mapOf(
+            "User-Agent" to userAgent,
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
+            "sec-fetch-site" to "none",
+            "sec-fetch-mode" to "navigate",
+            "sec-fetch-dest" to "document",
+            "upgrade-insecure-requests" to "1"
+        ))
+        val html = response.text
+        val regex = Regex("(https://s\\.moonanime\\.art/content/stream/[^\"'\\s<>]+\\.m3u8(?:[^\"'\\s<>]*)?)")
+        regex.find(html)?.groupValues?.get(1) ?: ""
+    } catch (e: Exception) { "" }
     }
-
-    private fun extractIntFromString(string: String): Int? {
-        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
-        if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
-        return value.value.toIntOrNull()
-    }
-}
