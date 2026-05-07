@@ -1,0 +1,24 @@
+[
+    {
+        "iconUrl": "https://animeon.club/assets/images/short-logo.png",
+        "fileHash": "sha256-38e2c7d6659d2dfbd580702588ebb4edad4b5b3b0969b83a71a4c8c52649058c",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/deleteBlack666/cloudstream-extensions-uk",
+        "fileSize": 48302,
+        "status": 1,
+        "language": "uk",
+        "authors": [
+            "deleteBlack666,CakesTwix"
+        ],
+        "tvTypes": [
+            "Anime",
+            "AnimeMovie",
+            "OVA"
+        ],
+        "version": 3,
+        "internalName": "AnimeONProvider",
+        "description": "AnimeON - \u0414\u0438\u0432\u0438\u0442\u0438\u0441\u044f \u0430\u043d\u0456\u043c\u0435 \u0443\u043a\u0440\u0430\u0457\u043d\u044c\u0441\u043a\u043e\u044e",
+        "url": "https://raw.githubusercontent.com/deleteBlack666/cloudstream-extensions-uk/builds/AnimeONProvider.cs3",
+        "name": "AnimeONProvider"
+    }
+]
