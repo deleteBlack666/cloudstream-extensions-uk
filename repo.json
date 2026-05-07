@@ -1,6 +1,6 @@
 {
-    "name": "Watching",
-    "description": "Cloudstream Ukraine Plugin Repository",
+    "name": "AnimeON",
+    "description": "Cloudstream AnimeON Plugin Repository",
     "manifestVersion": 1,
     "pluginLists": [
       "https://raw.githubusercontent.com/deleteBlack666/cloudstream-extensions-uk/builds/plugins.json"
