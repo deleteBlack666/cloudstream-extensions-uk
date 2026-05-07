@@ -30,9 +30,9 @@ class AnimeONProvider : MainAPI() {
     private val userAgent = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
 
     override val mainPage = mainPageOf(
-        "$apiUrl?pageSize=24&pageIndex=%d&sort=rating" to "Популярне",
+        "$apiUrl?pageSize=24&pageIndex=%d&sort=rating" to "Популярне", //треба пофіксити дублювання  Нове аніме на сайті
         "$apiUrl/seasons" to "Аніме поточного сезону",
-        "$apiUrl?pageSize=24&pageIndex=%d" to "Нове",
+        "$apiUrl?pageSize=24&pageIndex=%d" to "Нове аніме на сайті",
     )
 
     private val listResults = object : TypeToken<List<Results>>() {}.type
