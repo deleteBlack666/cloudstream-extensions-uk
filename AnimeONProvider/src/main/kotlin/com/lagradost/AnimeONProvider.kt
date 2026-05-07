@@ -32,7 +32,7 @@ class AnimeONProvider : MainAPI() {
     override val mainPage = mainPageOf(
         "$apiUrl?pageSize=24&pageIndex=%d&sort=rating" to "Популярне",
         "$apiUrl/seasons" to "Аніме поточного сезону",
-        "$apiUrl?pageSize=24&pageIndex=%d" to "Нове аніме на сайті",
+        "$apiUrl?pageSize=24&pageIndex=%d" to "Нове",
     )
 
     private val listResults = object : TypeToken<List<Results>>() {}.type
@@ -106,8 +106,8 @@ class AnimeONProvider : MainAPI() {
                 val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
                 if (translations.isNotEmpty()) {
                     val best = translations.maxByOrNull { t -> t.player.maxOfOrNull { it.episodesCount } ?: 0 } ?: translations[0]
-                    val translationId = best.translation.id
-                    for (player in best.player.sortedByDescending { it.episodesCount }) {
+val translationId = best.translation.id
+for (player in best.player.sortedByDescending { it.episodesCount }) {
                         val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
                         val epJson = fetchJsonOrNull(epUrl)
                         if (epJson != null) {
@@ -188,6 +188,7 @@ class AnimeONProvider : MainAPI() {
                         .episodes?.firstOrNull { it.episode == dataList[1].toIntOrNull() }
                 } catch (e: Exception) { null } ?: continue
 
+                // Ashdi — використовуємо fileUrl напряму
                 val fileUrl = episode.fileUrl
                 if (!fileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
@@ -198,6 +199,7 @@ class AnimeONProvider : MainAPI() {
                     break
                 }
 
+                // Moon — парсимо iframe
                 val videoUrl = episode.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
                     val m3u8 = getMoonM3U(videoUrl)
@@ -218,18 +220,17 @@ class AnimeONProvider : MainAPI() {
 
     private suspend fun getMoonM3U(iframeUrl: String): String {
         return try {
+            val slug = iframeUrl.substringAfter("/iframe/").substringBefore("/")
             val response = app.get(iframeUrl, headers = mapOf(
+                "Referer" to "https://animeon.club/",
+                "Origin" to "https://animeon.club",
                 "User-Agent" to userAgent,
-                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
-                "sec-fetch-site" to "none",
-                "sec-fetch-mode" to "navigate",
-                "sec-fetch-dest" to "document",
-                "upgrade-insecure-requests" to "1"
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"
             ))
-            val html = response.text
-            val regex = Regex("(https://s\\.moonanime\\.art/content/stream/[^\"'\\s<>]+\\.m3u8(?:[^\"'\\s<>]*)?)")
-            regex.find(html)?.groupValues?.get(1) ?: ""
+            val html = response.body.string()
+            val regexManifest = Regex("https://s\\.moonanime\\.art/content/stream/anime/\\d+/$slug/hls/[^\"'\\s]+\\.m3u8[^\"'\\s]*")
+            regexManifest.find(html)?.value ?: ""
         } catch (e: Exception) { "" }
     }
 
