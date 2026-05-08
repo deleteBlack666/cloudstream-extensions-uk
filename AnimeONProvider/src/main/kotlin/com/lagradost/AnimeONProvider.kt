@@ -30,10 +30,10 @@ class AnimeONProvider : MainAPI() {
     private val userAgent = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
 
     override val mainPage = mainPageOf(
-        "$apiUrl?pageSize=24&pageIndex=%d&sort=rating" to "Популярне",
-        "$apiUrl/seasons" to "Аніме поточного сезону",
-        "$apiUrl?pageSize=24&pageIndex=%d" to "Нове",
-    )
+    "$mainUrl/api/stats/anime/" to "Популярні аніме",
+    "$apiUrl/seasons" to "Аніме поточного сезону",
+    "$apiUrl?pageSize=24&pageIndex=%d" to "Нове аніме на сайті",
+)
 
     private val listResults = object : TypeToken<List<Results>>() {}.type
 
@@ -49,24 +49,58 @@ class AnimeONProvider : MainAPI() {
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        if (request.data.contains("seasons") && page != 1) return newHomePageResponse(emptyList())
-        val jsonText = fetchJsonOrNull(request.data.format(page)) ?: return newHomePageResponse(request.name, emptyList())
 
-        return if (!request.data.contains("seasons")) {
-            val parsedJSON = Gson().fromJson(jsonText, NewAnimeModel::class.java)
-            newHomePageResponse(request.name, parsedJSON.results.map {
-                newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
-                    this.posterUrl = posterApi.format(it.image.preview)
-                }
-            })
-        } else {
-            val parsedJSON = Gson().fromJson<List<Results>>(jsonText, listResults)
-            newHomePageResponse(request.name, parsedJSON.map {
-                newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
-                    this.posterUrl = posterApi.format(it.image.preview)
-                }
-            })
-        }
+    if (request.name == "Популярні аніме") {
+
+        if (page != 1) return newHomePageResponse(request.name, emptyList())
+
+        val currentDate = java.text.SimpleDateFormat(
+            "EEE MMM dd yyyy",
+            java.util.Locale.ENGLISH
+        ).format(java.util.Date())
+
+        val jsonText = fetchJsonOrNull(
+            "${request.data}$currentDate?withView=false"
+        ) ?: return newHomePageResponse(request.name, emptyList())
+
+        val parsedJSON = Gson().fromJson<List<Results>>(jsonText, listResults)
+
+        return newHomePageResponse(request.name, parsedJSON.map {
+            newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
+                this.posterUrl = posterApi.format(it.image.preview)
+            }
+        })
+    }
+
+    if (request.data.contains("seasons") && page != 1) {
+        return newHomePageResponse(emptyList())
+    }
+
+    val jsonText = fetchJsonOrNull(
+        if (request.data.contains("%d")) request.data.format(page)
+        else request.data
+    ) ?: return newHomePageResponse(request.name, emptyList())
+
+    return if (!request.data.contains("seasons")) {
+
+        val parsedJSON = Gson().fromJson(jsonText, NewAnimeModel::class.java)
+
+        newHomePageResponse(request.name, parsedJSON.results.map {
+            newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
+                this.posterUrl = posterApi.format(it.image.preview)
+            }
+        })
+
+    } else {
+
+        val parsedJSON = Gson().fromJson<List<Results>>(jsonText, listResults)
+
+        newHomePageResponse(request.name, parsedJSON.map {
+            newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
+                this.posterUrl = posterApi.format(it.image.preview)
+            }
+        })
+    }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
