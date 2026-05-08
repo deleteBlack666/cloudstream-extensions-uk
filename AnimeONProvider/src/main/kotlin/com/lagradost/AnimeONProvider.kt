@@ -214,13 +214,32 @@ for (player in best.player.sortedByDescending { it.episodesCount }) {
         translations.forEach { item ->
             val translationId = item.translation.id
             for (player in item.player) {
-                val epUrl = "$mainUrl/api/player/${dataList[0]}/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
-                val epJson = fetchJsonOrNull(epUrl) ?: continue
+                val targetEpisode = dataList[1].toIntOrNull() ?: continue
+var episode: PlayerEpisode? = null
 
-                val episode = try {
-                    Gson().fromJson(epJson, PlayerEpisodes::class.java)
-                        .episodes?.firstOrNull { it.episode == dataList[1].toIntOrNull() }
-                } catch (e: Exception) { null } ?: continue
+for (offset in 0..2000 step 100) {
+
+    val epUrl =
+        "$mainUrl/api/player/${dataList[0]}/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
+
+    val epJson = fetchJsonOrNull(epUrl) ?: continue
+
+    val parsed = try {
+        Gson().fromJson(epJson, PlayerEpisodes::class.java)
+    } catch (e: Exception) {
+        null
+    } ?: continue
+
+    val eps = parsed.episodes ?: emptyList()
+
+    if (eps.isEmpty()) break
+
+    episode = eps.firstOrNull { it.episode == targetEpisode }
+
+    if (episode != null) break
+}
+
+if (episode == null) continue
 
                 // Ashdi — використовуємо fileUrl напряму
                 val fileUrl = episode.fileUrl
