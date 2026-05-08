@@ -288,9 +288,20 @@ if (episode == null) continue
     return true  
 }  
 
+private fun moonDecrypt(encoded: String): String {
+    return try {
+        val key = "mAnK"
+        val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+        val result = StringBuilder()
+        for (i in decoded.indices) {
+            result.append((decoded[i].toInt() and 0xFF xor key[i % key.length].code).toChar())
+        }
+        result.toString()
+    } catch (e: Exception) { "" }
+}
+
 private suspend fun getMoonM3U(iframeUrl: String): String {
     return try {
-        val slug = iframeUrl.substringAfter("/iframe/").substringBefore("/")
         val response = app.get(iframeUrl, headers = mapOf(
             "Referer" to "https://animeon.club/",
             "Origin" to "https://animeon.club",
@@ -300,25 +311,10 @@ private suspend fun getMoonM3U(iframeUrl: String): String {
         ))
         val html = response.body.string()
 
-        // Формат 1: manifest (містить всі якості) — пріоритет
-        val regexManifest = Regex(
-            "https://s\\.moonanime\\.art/content/stream/anime/\\d+/$slug/hls/[^\"'\\s]+manifest\\.m3u8[^\"'\\s]*"
-        )
-        regexManifest.find(html)?.value?.let { return it }
+        val encRegex = Regex("""file:\s*_0xd\("([^"]+)"\)""")
+        val encMatch = encRegex.find(html)?.groupValues?.get(1)
+            ?: return ""
 
-        // Формат 2: quality/1080 — fallback
-        val regexQuality = Regex(
-            "https://s\\.moonanime\\.art/content/stream/anime/\\d+/$slug/hls/quality/\\d+/index\\.m3u8[^\"'\\s]*"
-        )
-        regexQuality.find(html)?.value ?: ""
-
+        moonDecrypt(encMatch)
     } catch (e: Exception) { "" }
-}
-
-private fun extractIntFromString(string: String): Int? {  
-    val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null  
-    if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()  
-    return value.value.toIntOrNull()  
-}
-
 }
