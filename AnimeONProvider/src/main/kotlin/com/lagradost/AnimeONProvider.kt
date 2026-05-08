@@ -134,37 +134,48 @@ override suspend fun load(url: String): LoadResponse {
         }  
     }  
 
-    val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()  
-    val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")  
-    if (translationsJson != null) {  
-        try {  
-            val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations  
-            if (translations.isNotEmpty()) {  
-                val best = translations.maxByOrNull { t -> t.player.maxOfOrNull { it.episodesCount } ?: 0 } ?: translations[0]
 
-val translationId = best.translation.id
-for (player in best.player.sortedByDescending { it.episodesCount }) {
-val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
-val epJson = fetchJsonOrNull(epUrl)
-if (epJson != null) {
-val eps = Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
-if (!eps.isNullOrEmpty()) {
-eps.forEach { ep ->
-episodes.add(newEpisode("$animeId, ${ep.episode}") {
-this.name = "Епізод ${ep.episode}"
-this.posterUrl = ep.poster
-this.episode = ep.episode
-this.data = "$animeId, ${ep.episode}"
-})
-}
-break
-}
-}
-}
-}
-} catch (e: Exception) { }
-}
 
+val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
+val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
+if (translationsJson != null) {
+    try {
+        val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
+        if (translations.isNotEmpty()) {
+            val best = translations.maxByOrNull { t -> t.player.maxOfOrNull { it.episodesCount } ?: 0 } ?: translations[0]
+            val translationId = best.translation.id
+
+            for (player in best.player.sortedByDescending { it.episodesCount }) {
+                var collected = mutableListOf<FundubEpisode>()
+
+                // fix: пагінація замість skip=-1
+                for (offset in 0..5000 step 100) {
+                    val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
+                    val epJson = fetchJsonOrNull(epUrl) ?: break
+                    val eps = try {
+                        Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
+                    } catch (e: Exception) { null }
+
+                    if (eps.isNullOrEmpty()) break
+                    collected.addAll(eps)
+                    if (eps.size < 100) break // остання сторінка
+                }
+
+                if (collected.isNotEmpty()) {
+                    collected.forEach { ep ->
+                        episodes.add(newEpisode("$animeId, ${ep.episode}") {
+                            this.name = "Епізод ${ep.episode}"
+                            this.posterUrl = ep.poster
+                            this.episode = ep.episode
+                            this.data = "$animeId, ${ep.episode}"
+                        })
+                    }
+                    break
+                }
+            }
+        }
+    } catch (e: Exception) { }
+}
 return if (tvType == TvType.Anime || tvType == TvType.OVA) {  
         newAnimeLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType) {  
             this.posterUrl = posterApi.format(animeJSON.image.preview)  
