@@ -213,33 +213,39 @@ for (player in best.player.sortedByDescending { it.episodesCount }) {
 
         translations.forEach { item ->
             val translationId = item.translation.id
-            for (player in item.player) {
-                val targetEpisode = dataList[1].toIntOrNull() ?: continue
-var episode: FundubEpisode? = null
+for (player in best.player.sortedByDescending { it.episodesCount }) {
 
-for (offset in 0..2000 step 100) {
+    var foundEpisodes = false
 
-    val epUrl =
-        "$mainUrl/api/player/${dataList[0]}/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
+    for (offset in 0..3000 step 100) {
 
-    val epJson = fetchJsonOrNull(epUrl) ?: continue
+        val epUrl =
+            "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
 
-    val parsed = try {
-        Gson().fromJson(epJson, PlayerEpisodes::class.java)
-    } catch (e: Exception) {
-        null
-    } ?: continue
+        val epJson = fetchJsonOrNull(epUrl) ?: continue
 
-    val eps = parsed.episodes ?: emptyList()
+        val eps = try {
+            Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
+        } catch (e: Exception) {
+            null
+        }
 
-    if (eps.isEmpty()) break
+        if (eps.isNullOrEmpty()) break
 
-    episode = eps.firstOrNull { it.episode == targetEpisode }
+        foundEpisodes = true
 
-    if (episode != null) break
+        eps.forEach { ep ->
+            episodes.add(newEpisode("$animeId, ${ep.episode}") {
+                this.name = "Епізод ${ep.episode}"
+                this.posterUrl = ep.poster
+                this.episode = ep.episode
+                this.data = "$animeId, ${ep.episode}"
+            })
+        }
+    }
+
+    if (foundEpisodes) break
 }
-
-if (episode == null) continue
 
                 // Ashdi — використовуємо fileUrl напряму
                 val fileUrl = episode.fileUrl
