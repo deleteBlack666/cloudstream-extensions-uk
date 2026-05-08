@@ -239,17 +239,15 @@ class AnimeONProvider : MainAPI() {
 
                 if (episode == null) continue
 
+                // DEBUG — показуємо що є в епізоді
+                M3u8Helper.generateM3u8(
+                    source = "EP_DATA: fileUrl=${episode.fileUrl} videoUrl=${episode.videoUrl}",
+                    streamUrl = "https://test.com/test.m3u8",
+                    referer = ""
+                ).dropLast(1).forEach(callback)
+
                 // Ashdi
                 val fileUrl = episode.fileUrl
-                if (!fileUrl.isNullOrEmpty()) {
-                    M3u8Helper.generateM3u8(
-                        source = "${item.translation.name} (${player.name})",
-                        streamUrl = fileUrl,
-                        referer = "https://ashdi.vip"
-                    ).dropLast(1).forEach(callback)
-                    break
-                }
-
                 // Moon
                 val videoUrl = episode.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
