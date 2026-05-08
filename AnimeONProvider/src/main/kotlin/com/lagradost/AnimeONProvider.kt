@@ -213,6 +213,9 @@ class AnimeONProvider : MainAPI() {
         val episodes =
             mutableListOf<com.lagradost.cloudstream3.Episode>()
 
+        // ----- ВИПРАВЛЕНО: отримуємо ВСІ епізоди, а не тільки до 2000 -----
+        val totalEpisodes = animeJSON.episodes // загальна кількість серій (наприклад, 366 для Бліч)
+
         val translationsJson =
             fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
 
@@ -228,71 +231,59 @@ class AnimeONProvider : MainAPI() {
 
                 if (translations.isNotEmpty()) {
 
-                    val best = translations.maxByOrNull {
-                        t ->
-                        t.player.maxOfOrNull {
-                            it.episodesCount
-                        } ?: 0
+                    val best = translations.maxByOrNull { t ->
+                        t.player.maxOfOrNull { it.episodesCount } ?: 0
                     } ?: translations[0]
 
                     val translationId = best.translation.id
 
-                    for (
-                        player in best.player.sortedByDescending {
-                            it.episodesCount
-                        }
-                    ) {
+                    for (player in best.player.sortedByDescending { it.episodesCount }) {
 
-                        var foundEpisodes = false
+                        var allEpisodes = mutableListOf<FundubEpisode>()
+                        var offset = 0
 
-                        for (offset in 0..3000 step 100) {
-
+                        while (true) {
                             val epUrl =
                                 "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
 
-                            val epJson =
-                                fetchJsonOrNull(epUrl) ?: continue
-
+                            val epJson = fetchJsonOrNull(epUrl) ?: break
                             val eps = try {
+                                Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
+                            } catch (e: Exception) { null }
 
-                                Gson().fromJson(
-                                    epJson,
-                                    PlayerEpisodes::class.java
-                                ).episodes
+                            if (eps.isNullOrEmpty()) break
 
-                            } catch (e: Exception) {
-                                null
-                            }
+                            allEpisodes.addAll(eps)
+                            offset += 100
 
-                            if (eps.isNullOrEmpty())
-                                break
+                            // Якщо ми вже отримали всі епізоди (за кількістю), виходимо
+                            if (totalEpisodes > 0 && allEpisodes.size >= totalEpisodes) break
 
-                            foundEpisodes = true
+                            // Запобігаємо нескінченному циклу (максимум 10_000 епізодів, але це безпечно)
+                            if (offset > 10000) break
+                        }
 
-                            eps.forEach { ep ->
-
+                        if (allEpisodes.isNotEmpty()) {
+                            allEpisodes.forEach { ep ->
                                 episodes.add(
                                     newEpisode("$animeId, ${ep.episode}") {
-                                        this.name =
-                                            "Епізод ${ep.episode}"
-
+                                        this.name = "Епізод ${ep.episode}"
                                         this.posterUrl = ep.poster
                                         this.episode = ep.episode
-                                        this.data =
-                                            "$animeId, ${ep.episode}"
+                                        this.data = "$animeId, ${ep.episode}"
                                     }
                                 )
                             }
+                            break // знайшли плеєр з усіма серіями
                         }
-
-                        if (foundEpisodes)
-                            break
                     }
                 }
 
             } catch (e: Exception) {
+                // ігноруємо
             }
         }
+        // ---------------------------------------------------------
 
         return if (
             tvType == TvType.Anime ||
