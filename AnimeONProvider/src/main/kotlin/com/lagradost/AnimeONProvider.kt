@@ -269,21 +269,18 @@ if (episode == null) continue
                 break  
             }  
 
-            // Moon — парсимо iframe  
+            // Moon — парсимо iframe
             val videoUrl = episode.videoUrl  
             if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {  
-                val m3u8 = getMoonM3U(videoUrl)  
-                if (m3u8.isNotEmpty()) {  
-                    M3u8Helper.generateM3u8(  
-                        source = "${item.translation.name} (${player.name})",  
-                        streamUrl = m3u8,  
-                        referer = "https://moonanime.art/"  
-                    ).dropLast(1).forEach(callback)  
-                    break  
-                }  
-            }  
-        }  
-    }  
+                val m3u8 = getMoonM3U(videoUrl)
+                // DEBUG — показує результат прямо в UI
+                M3u8Helper.generateM3u8(
+                    source = "DEBUG: $m3u8",
+                    streamUrl = if (m3u8.startsWith("https")) m3u8 else "https://test.com/test.m3u8",
+                    referer = "https://moonanime.art/"
+                ).dropLast(1).forEach(callback)
+                if (m3u8.isNotEmpty() && m3u8.startsWith("https")) break
+            }
 
     return true  
 }  
@@ -311,18 +308,16 @@ private suspend fun getMoonM3U(iframeUrl: String): String {
         ))
         val html = response.body.string()
 
+        if (!html.contains("_0xd")) return "NO_0XD_IN_HTML"
+
         val encRegex = Regex("""file:\s*_0xd\("([^"]+)"\)""")
         val encMatch = encRegex.find(html)?.groupValues?.get(1)
-            ?: return ""
+            ?: run {
+                val idx = html.indexOf("file:")
+                val ctx = html.substring(maxOf(0, idx), minOf(html.length, idx + 100))
+                return "NO_MATCH:$ctx"
+            }
 
         moonDecrypt(encMatch)
-    } catch (e: Exception) { "" }
-}
-
-private fun extractIntFromString(string: String): Int? {
-    val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
-    if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
-    return value.value.toIntOrNull()
-}
-
+    } catch (e: Exception) { "ERROR:${e.message}" }
 }
