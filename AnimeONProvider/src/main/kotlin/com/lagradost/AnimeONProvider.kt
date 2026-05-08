@@ -231,27 +231,29 @@ override suspend fun loadLinks(
 
 var episode: FundubEpisode? = null
 
-for (offset in 0..2000 step 100) {
+// Рахуємо приблизний початковий offset (з запасом на 1 сторінку назад)
+val startOffset = maxOf(0, ((targetEpisode - 1) / 100) * 100)
 
-val epUrl =  
-    "$mainUrl/api/player/${dataList[0]}/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"  
+for (offset in startOffset..startOffset + 100 step 100) {
 
-val epJson = fetchJsonOrNull(epUrl) ?: continue  
+    val epUrl =
+        "$mainUrl/api/player/${dataList[0]}/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
 
-val parsed = try {  
-    Gson().fromJson(epJson, PlayerEpisodes::class.java)  
-} catch (e: Exception) {  
-    null  
-} ?: continue  
+    val epJson = fetchJsonOrNull(epUrl) ?: continue
 
-val eps = parsed.episodes ?: emptyList()  
+    val parsed = try {
+        Gson().fromJson(epJson, PlayerEpisodes::class.java)
+    } catch (e: Exception) {
+        null
+    } ?: continue
 
-if (eps.isEmpty()) break  
+    val eps = parsed.episodes ?: emptyList()
 
-episode = eps.firstOrNull { it.episode == targetEpisode }  
+    if (eps.isEmpty()) break
 
-if (episode != null) break
+    episode = eps.firstOrNull { it.episode == targetEpisode }
 
+    if (episode != null) break
 }
 
 if (episode == null) continue
