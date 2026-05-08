@@ -215,7 +215,7 @@ for (player in best.player.sortedByDescending { it.episodesCount }) {
             val translationId = item.translation.id
             for (player in item.player) {
                 val targetEpisode = dataList[1].toIntOrNull() ?: continue
-var episode: PlayerEpisode? = null
+var episode: FundubEpisode? = null
 
 for (offset in 0..2000 step 100) {
 
