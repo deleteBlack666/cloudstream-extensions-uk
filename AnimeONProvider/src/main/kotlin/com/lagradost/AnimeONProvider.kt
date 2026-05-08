@@ -324,4 +324,3 @@ private fun extractIntFromString(string: String): Int? {
     }
 
 }
-}
