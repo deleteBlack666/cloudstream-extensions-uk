@@ -317,10 +317,12 @@ private suspend fun getMoonM3U(iframeUrl: String): String {
 
         moonDecrypt(encMatch)
     } catch (e: Exception) { "" }
+}
+
 private fun extractIntFromString(string: String): Int? {
-        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
-        if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
-        return value.value.toIntOrNull()
-    }
+    val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
+    if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
+    return value.value.toIntOrNull()
+}
 
 }
