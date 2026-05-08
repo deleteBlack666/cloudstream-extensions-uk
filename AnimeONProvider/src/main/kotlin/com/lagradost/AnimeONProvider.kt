@@ -239,12 +239,16 @@ class AnimeONProvider : MainAPI() {
 
                 if (episode == null) continue
 
-                // DEBUG — показуємо що є в епізоді
-                M3u8Helper.generateM3u8(
-                    source = "EP_DATA: fileUrl=${episode.fileUrl} videoUrl=${episode.videoUrl}",
-                    streamUrl = "https://test.com/test.m3u8",
-                    referer = ""
-                ).dropLast(1).forEach(callback)
+                // DEBUG
+                callback(
+                    ExtractorLink(
+                        source = "DEBUG",
+                        name = "fileUrl=${episode.fileUrl?.take(50)} videoUrl=${episode.videoUrl?.take(50)}",
+                        url = "https://test.com/test.m3u8",
+                        referer = "",
+                        quality = 0
+                    )
+                )
 
                 // Ashdi
                 val fileUrl = episode.fileUrl
