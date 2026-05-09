@@ -239,6 +239,17 @@ class AnimeONProvider : MainAPI() {
 
                 if (episode == null) continue
 
+                // Отримуємо реальний videoUrl через /episode endpoint
+                val episodeId = episode.id
+                val realVideoUrl = if (episodeId != null) {
+                    try {
+                        val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode")
+                        if (epDetailJson != null) {
+                            Gson().fromJson(epDetailJson, FundubEpisode::class.java).videoUrl
+                        } else null
+                    } catch (e: Exception) { null }
+                } else null
+
                 // Ashdi — fileUrl напряму
                 val fileUrl = episode.fileUrl
                 if (!fileUrl.isNullOrEmpty()) {
@@ -251,9 +262,8 @@ class AnimeONProvider : MainAPI() {
                 }
 
                 // Moon
-                val videoUrl = episode.videoUrl
+                val videoUrl = realVideoUrl ?: episode.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
-                    // Прямий stream URL (s.moonanime.art)
                     if (videoUrl.contains("m3u8")) {
                         M3u8Helper.generateM3u8(
                             source = "${item.translation.name} (${player.name})",
@@ -262,7 +272,6 @@ class AnimeONProvider : MainAPI() {
                         ).dropLast(1).forEach(callback)
                         break
                     }
-                    // iframe — парсимо
                     val m3u8 = getMoonM3U(videoUrl)
                     if (m3u8.isNotEmpty() && m3u8.startsWith("https")) {
                         M3u8Helper.generateM3u8(
