@@ -306,7 +306,10 @@ class AnimeONProvider : MainAPI() {
                 "Origin" to "https://animeon.club",
                 "User-Agent" to userAgent,
                 "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"
+                "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Sec-Fetch-Dest" to "iframe",
+                "Sec-Fetch-Mode" to "navigate",
+                "Sec-Fetch-Site" to "cross-site"
             ))
             val html = response.body.string()
 
@@ -317,11 +320,3 @@ class AnimeONProvider : MainAPI() {
             moonDecrypt(encMatch)
         } catch (e: Exception) { "" }
     }
-
-    private fun extractIntFromString(string: String): Int? {
-        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
-        if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
-        return value.value.toIntOrNull()
-    }
-
-}
