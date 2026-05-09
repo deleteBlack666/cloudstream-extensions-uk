@@ -255,17 +255,26 @@ class AnimeONProvider : MainAPI() {
                 // Moon
                 val videoUrl = episode.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
+                    // videoUrl вже є прямим m3u8
+                    if (videoUrl.contains(".m3u8")) {
+                        M3u8Helper.generateM3u8(
+                            source = "${item.translation.name} (${player.name})",
+                            streamUrl = videoUrl,
+                            referer = "https://moonanime.art/"
+                        ).dropLast(1).forEach(callback)
+                        break
+                    }
+                    // videoUrl є iframe — парсимо
                     val m3u8 = getMoonM3U(videoUrl)
-                    // DEBUG
-                    M3u8Helper.generateM3u8(
-                        source = "DEBUG: $m3u8",
-                        streamUrl = if (m3u8.startsWith("https")) m3u8 else "https://test.com/test.m3u8",
-                        referer = "https://moonanime.art/"
-                    ).dropLast(1).forEach(callback)
-                    if (m3u8.isNotEmpty() && m3u8.startsWith("https")) break
+                    if (m3u8.isNotEmpty() && m3u8.startsWith("https")) {
+                        M3u8Helper.generateM3u8(
+                            source = "${item.translation.name} (${player.name})",
+                            streamUrl = m3u8,
+                            referer = "https://moonanime.art/"
+                        ).dropLast(1).forEach(callback)
+                        break
+                    }
                 }
-            }
-        }
 
         return true
     }
