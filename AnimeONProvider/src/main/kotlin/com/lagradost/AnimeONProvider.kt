@@ -153,7 +153,6 @@ class AnimeONProvider : MainAPI() {
 
                         if (collected.isNotEmpty()) {
                             collected.forEach { ep ->
-                                // зберігаємо ep.id як третій параметр
                                 episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
                                     this.name = "Епізод ${ep.episode}"
                                     this.posterUrl = ep.poster
@@ -320,3 +319,11 @@ class AnimeONProvider : MainAPI() {
             moonDecrypt(encMatch)
         } catch (e: Exception) { "" }
     }
+
+    private fun extractIntFromString(string: String): Int? {
+        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
+        if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
+        return value.value.toIntOrNull()
+    }
+
+}
