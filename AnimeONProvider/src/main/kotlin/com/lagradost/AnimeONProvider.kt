@@ -253,8 +253,8 @@ class AnimeONProvider : MainAPI() {
                 // Moon
                 val videoUrl = episode.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
-                    // Прямий m3u8
-                    if (videoUrl.contains(".m3u8")) {
+                    // Прямий stream URL (s.moonanime.art)
+                    if (videoUrl.contains("m3u8")) {
                         M3u8Helper.generateM3u8(
                             source = "${item.translation.name} (${player.name})",
                             streamUrl = videoUrl,
