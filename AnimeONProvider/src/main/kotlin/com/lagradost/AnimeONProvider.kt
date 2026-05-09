@@ -288,27 +288,29 @@
 ‎    return true  
 ‎}  
 ‎
-‎private suspend fun getMoonM3U(iframeUrl: String): String {  
-‎    return try {  
-‎        val slug = iframeUrl.substringAfter("/iframe/").substringBefore("/")  
-‎        val response = app.get(iframeUrl, headers = mapOf(  
-‎            "Referer" to "https://animeon.club/",  
-‎            "Origin" to "https://animeon.club",  
-‎            "User-Agent" to userAgent,  
-‎            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",  
-‎            "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"  
-‎        ))  
-‎        val html = response.body.string()  
-‎        val regexManifest = Regex("https://s\\.moonanime\\.art/content/stream/anime/\\d+/$slug/hls/[^\"'\\s]+\\.m3u8[^\"'\\s]*")  
-‎        regexManifest.find(html)?.value ?: ""  
-‎    } catch (e: Exception) { "" }  
-‎}  
-‎
-‎private fun extractIntFromString(string: String): Int? {  
-‎    val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null  
-‎    if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()  
-‎    return value.value.toIntOrNull()  
-‎}
-‎
-‎}
-‎
+private suspend fun getMoonM3U(iframeUrl: String): String {
+    return try {
+        val response = app.get(iframeUrl, headers = mapOf(
+            "Referer" to "https://animeon.club/",
+            "Origin" to "https://animeon.club",
+            "User-Agent" to userAgent,
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"
+        ))
+        val html = response.body.string()
+
+        val encRegex = Regex("""file:\s*_0xd\("([^"]+)"\)""")
+        val encMatch = encRegex.find(html)?.groupValues?.get(1)
+            ?: return ""
+
+        moonDecrypt(encMatch)
+    } catch (e: Exception) { "" }
+}
+
+private fun extractIntFromString(string: String): Int? {
+    val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
+    if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
+    return value.value.toIntOrNull()
+}
+
+}
