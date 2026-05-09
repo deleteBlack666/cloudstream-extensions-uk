@@ -312,5 +312,4 @@ private fun extractIntFromString(string: String): Int? {
     if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
     return value.value.toIntOrNull()
 }
-
 }
