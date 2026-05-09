@@ -153,11 +153,12 @@ class AnimeONProvider : MainAPI() {
 
                         if (collected.isNotEmpty()) {
                             collected.forEach { ep ->
-                                episodes.add(newEpisode("$animeId, ${ep.episode}") {
+                                // зберігаємо ep.id як третій параметр
+                                episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
                                     this.name = "Епізод ${ep.episode}"
                                     this.posterUrl = ep.poster
                                     this.episode = ep.episode
-                                    this.data = "$animeId, ${ep.episode}"
+                                    this.data = "$animeId, ${ep.episode}, ${ep.id}"
                                 })
                             }
                             break
@@ -210,7 +211,11 @@ class AnimeONProvider : MainAPI() {
         val dataList = data.split(", ")
         if (dataList.size < 2) return false
 
-        val translationsJson = fetchJsonOrNull("$mainUrl/api/player/${dataList[0]}/translations") ?: return false
+        val animeId = dataList[0]
+        val targetEpisode = dataList[1].toIntOrNull() ?: return false
+        val episodeId = dataList.getOrNull(2)?.toIntOrNull()
+
+        val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations") ?: return false
         val translations = try {
             Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
         } catch (e: Exception) { return false }
@@ -218,29 +223,8 @@ class AnimeONProvider : MainAPI() {
         translations.forEach { item ->
             val translationId = item.translation.id
             for (player in item.player) {
-                val targetEpisode = dataList[1].toIntOrNull() ?: continue
 
-                var episode: FundubEpisode? = null
-                val startOffset = maxOf(0, ((targetEpisode - 1) / 100) * 100)
-
-                for (offset in startOffset..startOffset + 100 step 100) {
-                    val epUrl = "$mainUrl/api/player/${dataList[0]}/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
-                    val epJson = fetchJsonOrNull(epUrl) ?: continue
-                    val parsed = try {
-                        Gson().fromJson(epJson, PlayerEpisodes::class.java)
-                    } catch (e: Exception) { null } ?: continue
-
-                    val eps = parsed.episodes ?: emptyList()
-                    if (eps.isEmpty()) break
-
-                    episode = eps.firstOrNull { it.episode == targetEpisode }
-                    if (episode != null) break
-                }
-
-                if (episode == null) continue
-
-                // Отримуємо реальний videoUrl через /episode endpoint
-                val episodeId = episode.id
+                // Отримуємо videoUrl через ep.id напряму
                 val realVideoUrl = if (episodeId != null) {
                     try {
                         val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode")
@@ -250,8 +234,23 @@ class AnimeONProvider : MainAPI() {
                     } catch (e: Exception) { null }
                 } else null
 
+                // Шукаємо епізод через пагінацію для fileUrl
+                var episode: FundubEpisode? = null
+                val startOffset = maxOf(0, ((targetEpisode - 1) / 100) * 100)
+                for (offset in startOffset..startOffset + 100 step 100) {
+                    val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
+                    val epJson = fetchJsonOrNull(epUrl) ?: continue
+                    val parsed = try {
+                        Gson().fromJson(epJson, PlayerEpisodes::class.java)
+                    } catch (e: Exception) { null } ?: continue
+                    val eps = parsed.episodes ?: emptyList()
+                    if (eps.isEmpty()) break
+                    episode = eps.firstOrNull { it.episode == targetEpisode }
+                    if (episode != null) break
+                }
+
                 // Ashdi — fileUrl напряму
-                val fileUrl = episode.fileUrl
+                val fileUrl = episode?.fileUrl
                 if (!fileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
                         source = "${item.translation.name} (${player.name})",
@@ -262,7 +261,7 @@ class AnimeONProvider : MainAPI() {
                 }
 
                 // Moon
-                val videoUrl = realVideoUrl ?: episode.videoUrl
+                val videoUrl = realVideoUrl ?: episode?.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
                     if (videoUrl.contains("m3u8")) {
                         M3u8Helper.generateM3u8(
