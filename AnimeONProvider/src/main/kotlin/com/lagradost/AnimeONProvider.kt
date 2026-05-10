@@ -49,6 +49,16 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
+    private suspend fun getAshdiPoster(vodUrl: String): String? {
+        return try {
+            val html = app.get(vodUrl, headers = mapOf(
+                "Referer" to mainUrl,
+                "User-Agent" to userAgent
+            )).text
+            Regex("""poster:"(https?://[^"]+)"""").find(html)?.groupValues?.get(1)
+        } catch (e: Exception) { null }
+    }
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
 
         if (request.name == "Популярні аніме") {
@@ -153,9 +163,19 @@ class AnimeONProvider : MainAPI() {
 
                         for (ep in collected) {
                             if (seenEpisodes.add(ep.episode)) {
+                                // Якщо poster порожній — беремо з ashdi vod сторінки
+                                val posterUrl = if (ep.poster.isNotEmpty()) {
+                                    ep.poster
+                                } else {
+                                    val vodId = ep.videoUrl?.substringAfterLast("/")
+                                    if (!vodId.isNullOrEmpty() && ep.videoUrl!!.contains("ashdi.vip")) {
+                                        getAshdiPoster("https://ashdi.vip/vod/$vodId?player=animeon.club")
+                                    } else null
+                                }
+
                                 episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
                                     this.name = "Епізод ${ep.episode}"
-                                    this.posterUrl = ep.poster
+                                    this.posterUrl = posterUrl
                                     this.episode = ep.episode
                                     this.data = "$animeId, ${ep.episode}, ${ep.id}"
                                 })
@@ -256,7 +276,7 @@ class AnimeONProvider : MainAPI() {
                         streamUrl = fileUrl,
                         referer = "https://ashdi.vip"
                     ).dropLast(1).forEach(callback)
-                    break
+                    continue
                 }
 
                 // Moon
@@ -268,7 +288,7 @@ class AnimeONProvider : MainAPI() {
                             streamUrl = videoUrl,
                             referer = "https://moonanime.art/"
                         ).dropLast(1).forEach(callback)
-                        break
+                        continue
                     }
                     val rawFile = getMoonFile(videoUrl)
                     if (rawFile.isNotEmpty()) {
@@ -277,10 +297,10 @@ class AnimeONProvider : MainAPI() {
                             val qualityRegex = Regex("""\[(\d+p)\](https?://[^\s,]+)""")
                             qualityRegex.findAll(rawFile).forEach { match ->
                                 val quality = match.groupValues[1]
-                                val url = match.groupValues[2]
+                                val qUrl = match.groupValues[2]
                                 M3u8Helper.generateM3u8(
                                     source = "$sourceName $quality",
-                                    streamUrl = url,
+                                    streamUrl = qUrl,
                                     referer = "https://moonanime.art/",
                                     headers = mapOf(
                                         "User-Agent" to userAgent,
@@ -290,7 +310,7 @@ class AnimeONProvider : MainAPI() {
                                     )
                                 ).dropLast(1).forEach(callback)
                             }
-                        } else if (rawFile.contains(".m3u8")) {
+                        } else if (rawFile.contains(".m3u8") || rawFile.contains("m3u8")) {
                             M3u8Helper.generateM3u8(
                                 source = sourceName,
                                 streamUrl = rawFile,
@@ -303,7 +323,7 @@ class AnimeONProvider : MainAPI() {
                                 )
                             ).dropLast(1).forEach(callback)
                         }
-                        break
+                        continue
                     }
                 }
             }
@@ -368,4 +388,5 @@ class AnimeONProvider : MainAPI() {
         return value.value.toIntOrNull()
     }
 
-}
+                  }
+                  
