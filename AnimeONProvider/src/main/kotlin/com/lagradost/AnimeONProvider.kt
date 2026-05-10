@@ -7,7 +7,6 @@ import com.lagradost.cloudstream3.LoadResponse.Companion.addMalId
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.M3u8Helper
-import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.models.*
 
 class AnimeONProvider : MainAPI() {
@@ -139,7 +138,8 @@ class AnimeONProvider : MainAPI() {
                     for (player in translation.player) {
                         val collected = mutableListOf<FundubEpisode>()
 
-                        for (offset in 0..5000 step 100) {
+                        // Збільшуємо кількість сторінок для випадків, де серій > 500
+                        for (offset in 0..10000 step 100) {
                             val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
                             val epJson = fetchJsonOrNull(epUrl) ?: break
                             val eps = try {
@@ -153,9 +153,11 @@ class AnimeONProvider : MainAPI() {
 
                         for (ep in collected) {
                             if (seenEpisodes.add(ep.episode)) {
+                                // Забираємо порожні постери, щоб не було чорних іконок
+                                val poster = if (ep.poster != null && ep.poster.isNotEmpty()) ep.poster else null
                                 episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
                                     this.name = "Епізод ${ep.episode}"
-                                    this.posterUrl = ep.poster.ifEmpty { null }
+                                    this.posterUrl = poster
                                     this.episode = ep.episode
                                     this.data = "$animeId, ${ep.episode}, ${ep.id}"
                                 })
@@ -223,6 +225,7 @@ class AnimeONProvider : MainAPI() {
             val translationId = item.translation.id
             for (player in item.player) {
 
+                // Try to get direct video URL if we have episodeId
                 val realVideoUrl = if (episodeId != null) {
                     try {
                         val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode")
@@ -232,6 +235,7 @@ class AnimeONProvider : MainAPI() {
                     } catch (e: Exception) { null }
                 } else null
 
+                // Find the episode
                 var episode: FundubEpisode? = null
                 val startOffset = maxOf(0, ((targetEpisode - 1) / 100) * 100)
                 for (offset in startOffset..startOffset + 100 step 100) {
@@ -246,46 +250,43 @@ class AnimeONProvider : MainAPI() {
                     if (episode != null) break
                 }
 
-                // Ashdi
+                // Try Ashdi
                 val fileUrl = episode?.fileUrl
-                if (!fileUrl.isNullOrEmpty()) {
+                if (!fileUrl.isNullOrEmpty() && fileUrl.startsWith("https://ashdi.vip/video04/")) {
                     M3u8Helper.generateM3u8(
                         source = "${item.translation.name} (${player.name})",
                         streamUrl = fileUrl,
                         referer = "https://ashdi.vip"
                     ).dropLast(1).forEach(callback)
+                    return true
                 }
 
-                // Moon
-                val videoUrl = realVideoUrl ?: episode?.videoUrl
-                if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
-                    if (videoUrl.contains("m3u8")) {
+                // Try Moon
+                val previewUrl = realVideoUrl ?: episode?.videoUrl
+                if (!previewUrl.isNullOrEmpty() && previewUrl.contains("moonanime.art")) {
+                    if (previewUrl.contains("m3u8")) {
                         M3u8Helper.generateM3u8(
-                            source = "${item.translation.name} (${player.name}) Moon",
-                            streamUrl = videoUrl,
+                            source = "${item.translation.name} (${player.name})",
+                            streamUrl = previewUrl,
                             referer = "https://moonanime.art/"
                         ).dropLast(1).forEach(callback)
+                        return true
                     } else {
-                        val rawFile = getMoonFile(videoUrl)
+                        val rawFile = getMoonFile(previewUrl)
                         if (rawFile.isNotEmpty() && rawFile.contains("m3u8")) {
                             M3u8Helper.generateM3u8(
-                                source = "${item.translation.name} (${player.name}) Moon",
+                                source = "${item.translation.name} (${player.name})",
                                 streamUrl = rawFile,
-                                referer = "https://moonanime.art/",
-                                headers = mapOf(
-                                    "User-Agent" to userAgent,
-                                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                                    "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
-                                    "Referer" to "https://animeon.club/"
-                                )
+                                referer = "https://moonanime.art/"
                             ).dropLast(1).forEach(callback)
+                            return true
                         }
                     }
                 }
             }
         }
 
-        return true
+        return false
     }
 
     private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
@@ -343,5 +344,4 @@ class AnimeONProvider : MainAPI() {
         if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
         return value.value.toIntOrNull()
     }
-
 }
