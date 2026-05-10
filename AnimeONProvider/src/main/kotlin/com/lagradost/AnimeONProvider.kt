@@ -143,7 +143,14 @@ class AnimeONProvider : MainAPI() {
         if (translationsJson != null) {
             try {
                 val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
-                val seenEpisodes = mutableSetOf<Int>()
+
+                // episodeNum -> постер (перший непорожній)
+                val episodePosterMap = mutableMapOf<Int, String>()
+                // episodeNum -> ep.id (перший знайдений)
+                val episodeIdMap = mutableMapOf<Int, Int>()
+                // episodeNum -> videoUrl Ashdi для fallback постера
+                val episodeAshdiVodMap = mutableMapOf<Int, String>()
+
                 for (translation in translations) {
                     val translationId = translation.translation.id
                     for (player in translation.player) {
@@ -162,27 +169,49 @@ class AnimeONProvider : MainAPI() {
                         }
 
                         for (ep in collected) {
-                            if (seenEpisodes.add(ep.episode)) {
-                                val posterUrl = if (ep.poster.isNotEmpty()) {
-                                    ep.poster
-                                } else {
-                                    val vodId = ep.videoUrl?.substringAfterLast("/")
-                                    if (!vodId.isNullOrEmpty() && ep.videoUrl!!.contains("ashdi.vip")) {
-                                        getAshdiPoster("https://ashdi.vip/vod/$vodId?player=animeon.club")
-                                    } else null
-                                }
-
-                                episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
-                                    this.name = "Епізод ${ep.episode}"
-                                    this.posterUrl = posterUrl
-                                    this.episode = ep.episode
-                                    this.data = "$animeId, ${ep.episode}, ${ep.id}"
-                                })
+                            // Зберігаємо id якщо ще немає
+                            if (!episodeIdMap.containsKey(ep.episode)) {
+                                episodeIdMap[ep.episode] = ep.id
+                            }
+                            // Постер — беремо перший непорожній
+                            if (ep.poster.isNotEmpty() && !episodePosterMap.containsKey(ep.episode)) {
+                                episodePosterMap[ep.episode] = ep.poster
+                            }
+                            // Ashdi videoUrl для fallback постера
+                            if (!episodeAshdiVodMap.containsKey(ep.episode) &&
+                                !ep.videoUrl.isNullOrEmpty() &&
+                                ep.videoUrl!!.contains("ashdi.vip")) {
+                                episodeAshdiVodMap[ep.episode] = ep.videoUrl!!
                             }
                         }
                     }
                 }
-                episodes.sortBy { it.episode }
+
+                // Будуємо список епізодів
+                val allEpisodeNums = episodeIdMap.keys.sorted()
+                for (epNum in allEpisodeNums) {
+                    val epId = episodeIdMap[epNum] ?: continue
+
+                    // 1. Moon постер
+                    var poster: String? = episodePosterMap[epNum]
+
+                    // 2. Ashdi постер як fallback
+                    if (poster.isNullOrEmpty()) {
+                        val ashdiVodUrl = episodeAshdiVodMap[epNum]
+                        if (!ashdiVodUrl.isNullOrEmpty()) {
+                            val vodId = ashdiVodUrl.substringAfterLast("/")
+                            poster = getAshdiPoster("https://ashdi.vip/vod/$vodId?player=animeon.club")
+                        }
+                    }
+
+                    episodes.add(newEpisode("$animeId, $epNum, $epId") {
+                        this.name = "Епізод $epNum"
+                        this.posterUrl = poster
+                        this.episode = epNum
+                        this.data = "$animeId, $epNum, $epId"
+                    })
+                }
+
             } catch (e: Exception) { }
         }
 
@@ -366,5 +395,4 @@ class AnimeONProvider : MainAPI() {
         return value.value.toIntOrNull()
     }
 
-                  }
-                  
+}
