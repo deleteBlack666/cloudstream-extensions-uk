@@ -49,16 +49,6 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
-    private suspend fun getAshdiPoster(vodUrl: String): String? {
-        return try {
-            val html = app.get(vodUrl, headers = mapOf(
-                "Referer" to mainUrl,
-                "User-Agent" to userAgent
-            )).text
-            Regex("""poster:"(https?://[^"]+)"""").find(html)?.groupValues?.get(1)
-        } catch (e: Exception) { null }
-    }
-
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
 
         if (request.name == "Популярні аніме") {
@@ -143,14 +133,7 @@ class AnimeONProvider : MainAPI() {
         if (translationsJson != null) {
             try {
                 val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
-
-                // episodeNum -> постер (перший непорожній)
-                val episodePosterMap = mutableMapOf<Int, String>()
-                // episodeNum -> ep.id (перший знайдений)
-                val episodeIdMap = mutableMapOf<Int, Int>()
-                // episodeNum -> videoUrl Ashdi для fallback постера
-                val episodeAshdiVodMap = mutableMapOf<Int, String>()
-
+                val seenEpisodes = mutableSetOf<Int>()
                 for (translation in translations) {
                     val translationId = translation.translation.id
                     for (player in translation.player) {
@@ -169,49 +152,18 @@ class AnimeONProvider : MainAPI() {
                         }
 
                         for (ep in collected) {
-                            // Зберігаємо id якщо ще немає
-                            if (!episodeIdMap.containsKey(ep.episode)) {
-                                episodeIdMap[ep.episode] = ep.id
-                            }
-                            // Постер — беремо перший непорожній
-                            if (ep.poster.isNotEmpty() && !episodePosterMap.containsKey(ep.episode)) {
-                                episodePosterMap[ep.episode] = ep.poster
-                            }
-                            // Ashdi videoUrl для fallback постера
-                            if (!episodeAshdiVodMap.containsKey(ep.episode) &&
-                                !ep.videoUrl.isNullOrEmpty() &&
-                                ep.videoUrl!!.contains("ashdi.vip")) {
-                                episodeAshdiVodMap[ep.episode] = ep.videoUrl!!
+                            if (seenEpisodes.add(ep.episode)) {
+                                episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
+                                    this.name = "Епізод ${ep.episode}"
+                                    this.posterUrl = ep.poster.ifEmpty { null }
+                                    this.episode = ep.episode
+                                    this.data = "$animeId, ${ep.episode}, ${ep.id}"
+                                })
                             }
                         }
                     }
                 }
-
-                // Будуємо список епізодів
-                val allEpisodeNums = episodeIdMap.keys.sorted()
-                for (epNum in allEpisodeNums) {
-                    val epId = episodeIdMap[epNum] ?: continue
-
-                    // 1. Moon постер
-                    var poster: String? = episodePosterMap[epNum]
-
-                    // 2. Ashdi постер як fallback
-                    if (poster.isNullOrEmpty()) {
-                        val ashdiVodUrl = episodeAshdiVodMap[epNum]
-                        if (!ashdiVodUrl.isNullOrEmpty()) {
-                            val vodId = ashdiVodUrl.substringAfterLast("/")
-                            poster = getAshdiPoster("https://ashdi.vip/vod/$vodId?player=animeon.club")
-                        }
-                    }
-
-                    episodes.add(newEpisode("$animeId, $epNum, $epId") {
-                        this.name = "Епізод $epNum"
-                        this.posterUrl = poster
-                        this.episode = epNum
-                        this.data = "$animeId, $epNum, $epId"
-                    })
-                }
-
+                episodes.sortBy { it.episode }
             } catch (e: Exception) { }
         }
 
@@ -271,7 +223,6 @@ class AnimeONProvider : MainAPI() {
             val translationId = item.translation.id
             for (player in item.player) {
 
-                // Отримуємо videoUrl через ep.id напряму
                 val realVideoUrl = if (episodeId != null) {
                     try {
                         val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode")
@@ -281,7 +232,6 @@ class AnimeONProvider : MainAPI() {
                     } catch (e: Exception) { null }
                 } else null
 
-                // Шукаємо епізод через пагінацію
                 var episode: FundubEpisode? = null
                 val startOffset = maxOf(0, ((targetEpisode - 1) / 100) * 100)
                 for (offset in startOffset..startOffset + 100 step 100) {
@@ -296,7 +246,7 @@ class AnimeONProvider : MainAPI() {
                     if (episode != null) break
                 }
 
-                // Ashdi — fileUrl напряму
+                // Ashdi
                 val fileUrl = episode?.fileUrl
                 if (!fileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
@@ -304,7 +254,6 @@ class AnimeONProvider : MainAPI() {
                         streamUrl = fileUrl,
                         referer = "https://ashdi.vip"
                     ).dropLast(1).forEach(callback)
-                    // не continue — перевіряємо також Moon
                 }
 
                 // Moon
