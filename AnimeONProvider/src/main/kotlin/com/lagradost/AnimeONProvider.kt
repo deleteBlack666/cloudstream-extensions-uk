@@ -163,7 +163,6 @@ class AnimeONProvider : MainAPI() {
 
                         for (ep in collected) {
                             if (seenEpisodes.add(ep.episode)) {
-                                // Якщо poster порожній — беремо з ashdi vod сторінки
                                 val posterUrl = if (ep.poster.isNotEmpty()) {
                                     ep.poster
                                 } else {
@@ -253,7 +252,7 @@ class AnimeONProvider : MainAPI() {
                     } catch (e: Exception) { null }
                 } else null
 
-                // Шукаємо епізод через пагінацію для fileUrl
+                // Шукаємо епізод через пагінацію
                 var episode: FundubEpisode? = null
                 val startOffset = maxOf(0, ((targetEpisode - 1) / 100) * 100)
                 for (offset in startOffset..startOffset + 100 step 100) {
@@ -276,7 +275,7 @@ class AnimeONProvider : MainAPI() {
                         streamUrl = fileUrl,
                         referer = "https://ashdi.vip"
                     ).dropLast(1).forEach(callback)
-                    // НЕ continue — перевіряємо також Moon
+                    // не continue — перевіряємо також Moon
                 }
 
                 // Moon
@@ -290,20 +289,19 @@ class AnimeONProvider : MainAPI() {
                         ).dropLast(1).forEach(callback)
                     } else {
                         val rawFile = getMoonFile(videoUrl)
-                        if (rawFile.isNotEmpty() && (rawFile.contains("m3u8"))) {
+                        if (rawFile.isNotEmpty() && rawFile.contains("m3u8")) {
                             M3u8Helper.generateM3u8(
                                 source = "${item.translation.name} (${player.name}) Moon",
                                 streamUrl = rawFile,
                                 referer = "https://moonanime.art/",
                                 headers = mapOf(
                                     "User-Agent" to userAgent,
+                                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                                    "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
                                     "Referer" to "https://animeon.club/"
                                 )
                             ).dropLast(1).forEach(callback)
                         }
-                    }
-                }
-                        continue
                     }
                 }
             }
