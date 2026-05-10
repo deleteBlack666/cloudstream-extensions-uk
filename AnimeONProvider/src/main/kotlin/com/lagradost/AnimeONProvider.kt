@@ -173,13 +173,21 @@ class AnimeONProvider : MainAPI() {
 
                         collected.forEach { ep ->
                             if (seen.add(ep.episode)) {
+
+                                val validPoster =
+                                    ep.poster.takeIf {
+                                        it.isNotBlank() &&
+                                        it.startsWith("http") &&
+                                        !it.contains("null")
+                                    }
+
                                 episodes.add(
                                     newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
                                         this.name = "Епізод ${ep.episode}"
 
-                                        // FIX PREVIEW
+                                        // FIXED PREVIEW
                                         this.posterUrl =
-                                            ep.poster.takeIf { it.isNotBlank() }
+                                            validPoster
                                                 ?: animeJSON.image.preview.let {
                                                     posterApi.format(it)
                                                 }
@@ -259,7 +267,6 @@ class AnimeONProvider : MainAPI() {
 
                 if (episode == null) return@forEach
 
-                // ===== ASHDI PRIORITY =====
                 episode.fileUrl?.takeIf { it.isNotBlank() }?.let { fileUrl ->
                     M3u8Helper.generateM3u8(
                         source = "${item.translation.name} (${player.name})",
@@ -269,9 +276,9 @@ class AnimeONProvider : MainAPI() {
                     return@forEach
                 }
 
-                // ===== MOON FALLBACK =====
                 val videoUrl = episode.videoUrl
                 if (!videoUrl.isNullOrBlank()) {
+
                     val stream = if (videoUrl.contains("iframe")) {
                         getMoonFile(videoUrl)
                     } else videoUrl
