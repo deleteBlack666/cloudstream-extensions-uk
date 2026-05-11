@@ -286,61 +286,7 @@ class AnimeONProvider : MainAPI() {
         return episodes
     }
 
-    override suspend fun load(url: String): LoadResponse {
-        val animeId = url.substringAfterLast("/").substringBefore("-").toInt()
-        val jsonText = fetchJsonOrNull("$apiUrl/$animeId")
-            ?: throw Exception("Failed to load")
-        val animeJSON = Gson().fromJson(jsonText, AnimeInfoModel::class.java)
-
-        val showStatus = if (animeJSON.status.contains("ongoing")) ShowStatus.Ongoing else ShowStatus.Completed
-        val tvType = with(animeJSON.type) {
-            when {
-                contains("tv") -> TvType.Anime
-                contains("OVA") || contains("ONA") || contains("Спеціальний випуск") -> TvType.OVA
-                contains("movie") -> TvType.AnimeMovie
-                else -> TvType.Anime
-            }
-        }
-
-        val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
-        val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
-
-        if (translationsJson != null) {
-            try {
-                val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
-                episodes.addAll(collectEpisodes(animeId, translations))
-            } catch (e: Exception) { }
-        } else {
-            // Fallback: /translations дав 404, використовуємо players з animeJSON
-            val playerNames = animeJSON.players ?: emptyList()
-            if (playerNames.isNotEmpty()) {
-                // Шукаємо через відомий endpoint з hikka/animeon tracking
-                val trackingJson = fetchJsonOrNull("$mainUrl/api/user/anime-episode-tracking/$animeId/stats")
-                if (trackingJson != null) {
-                    try {
-                        // Отримуємо translationName зі stats і шукаємо відповідні епізоди
-                        val stats = Gson().fromJson(trackingJson, TrackingStats::class.java)
-                        // Для кожного translationName шукаємо playerId через перебір невеликого діапазону
-                        for (translationStat in stats.translations ?: emptyList()) {
-                            // Шукаємо епізоди через /episodes з різними translationId
-                            var found = false
-                            for (translationId in 1000..2000) {
-                                if (found) break
-                                for (playerId in listOf(
-                                    3466, 3888, 3774, 3792, 7745, 7927,
-                                    308, 266, 5538, 5539, 5540
-                                )) {
-                                    val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=-1&playerId=$playerId&translationId=$translationId"
-                                    val epJson = fetchJsonOrNull(epUrl) ?: continue
-                                    val eps = try {
-                                        Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
-                                    } catch (e: Exception) { null }
-                                    if (!eps.isNullOrEmpty()) {
-                                        found = true
-                                        break
-                                    }
-                                }
-                            }
+    
                         }
                     } catch (e: Exception) { }
                 }
