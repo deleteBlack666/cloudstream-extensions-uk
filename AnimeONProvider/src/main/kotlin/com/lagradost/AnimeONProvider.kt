@@ -54,7 +54,7 @@ class AnimeONProvider : MainAPI() {
                 "https://ashdi.vip/vod/$vodId?player=animeon.club",
                 headers = mapOf("Referer" to mainUrl, "User-Agent" to userAgent)
             ).text
-            Regex("""poster:"(https?://[^"]+)"""").find(html)?.groupValues?.get(1)
+            Regex("poster:\"(https?://[^\"]+)\"").find(html)?.groupValues?.get(1)
         } catch (e: Exception) { null }
     }
 
@@ -121,6 +121,7 @@ class AnimeONProvider : MainAPI() {
         return episodes
     }
 
+    // getMainPage, quickSearch, search — без змін
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         if (request.name == "Популярні аніме") {
             if (page != 1) return newHomePageResponse(request.name, emptyList())
@@ -208,7 +209,6 @@ class AnimeONProvider : MainAPI() {
             } catch (e: Exception) {}
         }
 
-        // Fallback
         if (episodes.isEmpty()) {
             val knownPlayerIds = listOf(3888, 7927, 3466, 3774, 3792, 7745, 308, 266, 5538, 5539, 5540)
             val knownTranslationIds = listOf(1093, 1098, 1105, 1110, 1167, 1179, 1400)
@@ -386,15 +386,16 @@ class AnimeONProvider : MainAPI() {
             "Referer" to "https://animeon.club/"
         )).text
 
-        // Виправлені Regex (raw strings)
-        val fileRegex = Regex("""file:\s*_0xd\(["']([^"']+)["']\)""")
+        // Безпечні Regex без raw string проблем
+        val fileRegex = Regex("file:\\s*_0xd\\([\"']([^\"']+)[\"']\\)")
+        val atobRegex = Regex("atob\\([\"']([^\"']+)[\"']\\)")
+
         val directMatch = fileRegex.find(html)?.groupValues?.get(1)
         if (directMatch != null) {
             val result = moonDecrypt(directMatch)
             if (result.isNotEmpty()) return result
         }
 
-        val atobRegex = Regex("""atob\(["']([^"']+)["']\)""")
         val atobMatch = atobRegex.find(html)?.groupValues?.get(1) ?: return ""
         val decodedJs = moonOuterDecode(atobMatch)
         if (decodedJs.isEmpty()) return ""
@@ -404,6 +405,6 @@ class AnimeONProvider : MainAPI() {
     }
 
     private fun extractIntFromString(string: String): Int? {
-        return Regex("""\d+""").findAll(string).lastOrNull()?.value?.toIntOrNull()
+        return Regex("\\d+").findAll(string).lastOrNull()?.value?.toIntOrNull()
     }
 }
