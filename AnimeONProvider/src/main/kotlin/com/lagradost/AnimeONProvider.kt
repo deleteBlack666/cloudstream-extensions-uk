@@ -136,70 +136,101 @@ class AnimeONProvider : MainAPI() {
             }
         }
 
-        val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
+        // ===== SELECT BEST PLAYER + PREVIEW FIX =====
 
-        val translationsJson =
-            fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
+val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
 
-        if (translationsJson != null) {
-            try {
-                val translations =
-                    Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
+val translationsJson =
+    fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
 
-                val seen = mutableSetOf<Int>()
+if (translationsJson != null) {
+    try {
+        val translations =
+            Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
 
-                translations.forEach { translation ->
-                    translation.player.forEach { player ->
+        val seen = mutableSetOf<Int>()
 
-                        val collected = mutableListOf<FundubEpisode>()
+        translations.forEach { translation ->
 
-                        for (offset in 0..2000 step 100) {
-                            val epUrl =
-                                "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=${translation.translation.id}"
+            // PRIORITY:
+            // 1. Moon with poster
+            // 2. Ashdi with fileUrl
+            val sortedPlayers = translation.player.sortedByDescending { player ->
+                when {
+                    player.name.equals("Moon", true) -> 2
+                    player.name.equals("Ashdi", true) -> 1
+                    else -> 0
+                }
+            }
 
-                            val epJson = fetchJsonOrNull(epUrl) ?: break
+            sortedPlayers.forEach { player ->
 
-                            val eps = try {
-                                Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
-                            } catch (_: Exception) {
-                                null
-                            }
+                val collected = mutableListOf<FundubEpisode>()
 
-                            if (eps.isNullOrEmpty()) break
-                            collected.addAll(eps)
+                for (offset in 0..2000 step 100) {
 
-                            if (eps.size < 100) break
+                    val epUrl =
+                        "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=${translation.translation.id}"
+
+                    val epJson = fetchJsonOrNull(epUrl) ?: break
+
+                    val eps = try {
+                        Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
+                    } catch (e: Exception) {
+                        null
+                    }
+
+                    if (eps.isNullOrEmpty()) break
+
+                    collected.addAll(eps)
+
+                    if (eps.size < 100) break
+                }
+
+                collected.forEach { ep ->
+
+                    // якщо епізод вже є — але новий має poster, оновлюємо
+                    val existing =
+                        episodes.find { it.episode == ep.episode }
+
+                    val betterPoster =
+                        !ep.poster.isNullOrEmpty()
+
+                    if (existing != null) {
+
+                        // FIX чорних прев'ю:
+                        // Moon poster > empty Ashdi poster
+                        if (betterPoster) {
+                            existing.posterUrl = ep.poster
                         }
 
-                        collected.forEach { ep ->
-                            if (seen.add(ep.episode)) {
+                    } else if (seen.add(ep.episode)) {
 
-                                val validPoster =
-                                    ep.poster.takeIf {
-                                        it.isNotBlank() &&
-                                        it.startsWith("http") &&
-                                        !it.contains("null")
-                                    }
+                        episodes.add(
+                            newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
 
-                                episodes.add(
-                                    newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
-                                        this.name = "Епізод ${ep.episode}"
+                                this.name = "Епізод ${ep.episode}"
 
-                                        // FIXED PREVIEW
-                                        this.posterUrl =
-                                            validPoster
-                                                ?: animeJSON.image.preview.let {
-                                                    posterApi.format(it)
-                                                }
+                                // ГОЛОВНИЙ ФІКС
+                                this.posterUrl =
+                                    ep.poster.takeIf { !it.isNullOrEmpty() }
 
-                                        this.episode = ep.episode
-                                        this.data = "$animeId, ${ep.episode}, ${ep.id}"
-                                    }
-                                )
+                                this.episode = ep.episode
+
+                                this.data =
+                                    "$animeId, ${ep.episode}, ${ep.id}"
                             }
-                        }
+                        )
                     }
                 }
+            }
+        }
+
+        episodes.sortBy { it.episode }
+
+    } catch (_: Exception) {
+    }
+}
 
                 episodes.sortBy { it.episode }
 
