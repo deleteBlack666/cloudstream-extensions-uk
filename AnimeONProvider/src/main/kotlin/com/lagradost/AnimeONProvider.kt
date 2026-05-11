@@ -129,41 +129,70 @@ class AnimeONProvider : MainAPI() {
         }
 
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
-        val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
-        if (translationsJson != null) {
-            try {
-                val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
-                val seenEpisodes = mutableSetOf<Int>()
-                for (translation in translations) {
-                    val translationId = translation.translation.id
-                    for (player in translation.player) {
-                        val collected = mutableListOf<FundubEpisode>()
 
-                        for (offset in 0..5000 step 100) {
-                            val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
-                            val epJson = fetchJsonOrNull(epUrl) ?: break
-                            val eps = try {
-                                Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
-                            } catch (e: Exception) { null }
+        // Основний постер аніме (fallback)
+        val animePoster = posterApi.format(animeJSON.image.preview)
 
-                            if (eps.isNullOrEmpty()) break
-                            collected.addAll(eps)
-                            if (eps.size < 100) break
-                        }
+        val seenEpisodes = mutableSetOf<Int>()
 
-                        for (ep in collected) {
-                            if (seenEpisodes.add(ep.episode)) {
-                                episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
-                                    this.name = "Епізод ${ep.episode}"
-                                    this.posterUrl = ep.poster
-                                    this.episode = ep.episode
-                                    this.data = "$animeId, ${ep.episode}, ${ep.id}"
-                                })
+        for (translation in translations) {
+            val translationId = translation.translation.id
+
+            for (player in translation.player) {
+                val collected = mutableListOf<FundubEpisode>()
+
+                // Збираємо всі епізоди
+                for (offset in 0..5000 step 100) {
+                    val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=\( offset&playerId= \){player.id}&translationId=$translationId"
+                    val epJson = fetchJsonOrNull(epUrl) ?: break
+
+                    val eps = try {
+                        Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
+                    } catch (e: Exception) { null } ?: break
+
+                    collected.addAll(eps)
+                    if (eps.size < 100) break
+                }
+
+                // Обробка епізодів
+                for (ep in collected) {
+                    if (!seenEpisodes.add(ep.episode)) continue
+
+                    // ==================== ЛОГІКА ПРЕВ'Ю ====================
+                    val episodePoster = when {
+                        // 1. Moon — має нормальні прев'ю
+                        !ep.poster.isNullOrBlank() && ep.poster.startsWith("http") -> ep.poster
+
+                        // 2. Ashdi — генеруємо прев'ю з fileUrl
+                        !ep.fileUrl.isNullOrBlank() && ep.fileUrl.contains("/serials/") -> {
+                            try {
+                                val pathPart = ep.fileUrl
+                                    .substringAfter("/serials/")
+                                    .substringBefore("/hls/")
+
+                                "https://jk19ocmjeoyql3tj.ashdi.vip/content/stream/serials/${pathPart}/screen.jpg"
+                            } catch (e: Exception) {
+                                animePoster
                             }
                         }
+
+                        // 3. Fallback
+                        !animeJSON.backgroundImage.isNullOrBlank() -> animeJSON.backgroundImage
+                        else -> animePoster
                     }
+                    // ======================================================
+
+                    episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
+                        this.name = "Епізод ${ep.episode}"
+                        this.posterUrl = episodePoster
+                        this.episode = ep.episode
+                        this.data = "$animeId, ${ep.episode}, ${ep.id}"
+                    })
                 }
-                episodes.sortBy { it.episode }
+            }
+        }
+
+        episodes.sortBy { it.episode }
             } catch (e: Exception) { }
         }
 
