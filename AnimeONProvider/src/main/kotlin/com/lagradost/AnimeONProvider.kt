@@ -133,9 +133,8 @@ class AnimeONProvider : MainAPI() {
                 java.util.Locale.ENGLISH
             ).format(java.util.Date())
 
-            val jsonText = fetchJsonOrNull(
-                "${request.data}$currentDate?withView=false"
-            ) ?: return newHomePageResponse(request.name, emptyList())
+            val jsonText = fetchJsonOrNull("${request.data}$currentDate?withView=false")
+                ?: return newHomePageResponse(request.name, emptyList())
 
             val parsedJSON = Gson().fromJson<List<Results>>(jsonText, listResults)
 
@@ -151,8 +150,7 @@ class AnimeONProvider : MainAPI() {
         }
 
         val jsonText = fetchJsonOrNull(
-            if (request.data.contains("%d")) request.data.format(page)
-            else request.data
+            if (request.data.contains("%d")) request.data.format(page) else request.data
         ) ?: return newHomePageResponse(request.name, emptyList())
 
         return if (!request.data.contains("seasons")) {
@@ -193,20 +191,22 @@ class AnimeONProvider : MainAPI() {
 
         val animeJSON = Gson().fromJson(jsonText, AnimeInfoModel::class.java)
 
-        val showStatus = if (animeJSON.status.contains("ongoing")) ShowStatus.Ongoing else ShowStatus.Completed
-        val tvType = with(animeJSON.type) {
+        val showStatus = if (animeJSON.status.contains("ongoing", ignoreCase = true)) 
+            ShowStatus.Ongoing else ShowStatus.Completed
+
+        val tvType = with(animeJSON.type.lowercase()) {
             when {
-                contains("tv", ignoreCase = true) -> TvType.Anime
-                contains("OVA") || contains("ONA") || contains("Спеціальний випуск") -> TvType.OVA
-                contains("movie", ignoreCase = true) -> TvType.AnimeMovie
+                contains("tv") -> TvType.Anime
+                contains("ova") || contains("ona") || contains("спеціальний") -> TvType.OVA
+                contains("movie") -> TvType.AnimeMovie
                 else -> TvType.Anime
             }
         }
 
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
 
+        // Основний метод
         val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
-
         if (translationsJson != null) {
             try {
                 val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
@@ -233,9 +233,7 @@ class AnimeONProvider : MainAPI() {
                     } catch (e: Exception) { null } ?: continue
 
                     for (ep in eps) {
-                        if (!episodeIdMap.containsKey(ep.episode)) {
-                            episodeIdMap[ep.episode] = ep.id
-                        }
+                        if (!episodeIdMap.containsKey(ep.episode)) episodeIdMap[ep.episode] = ep.id
                         if (ep.poster.isNotEmpty() && !episodePosterMap.containsKey(ep.episode)) {
                             episodePosterMap[ep.episode] = ep.poster
                         }
@@ -279,10 +277,8 @@ class AnimeONProvider : MainAPI() {
                 addMalId(animeJSON.malId.toIntOrNull())
             }
         } else {
-            val backgroundImage = if (animeJSON.backgroundImage.isNullOrBlank())
-                posterApi.format(animeJSON.image.preview)
-            else
-                animeJSON.backgroundImage
+            val backgroundImage = animeJSON.backgroundImage?.takeIf { it.isNotBlank() }
+                ?: posterApi.format(animeJSON.image.preview)
 
             newMovieLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType, "$animeId") {
                 this.posterUrl = posterApi.format(animeJSON.image.preview)
@@ -297,6 +293,8 @@ class AnimeONProvider : MainAPI() {
             }
         }
     }
+
+    // ==================== loadLinks + Moon Decrypt ====================
 
     override suspend fun loadLinks(
         data: String,
@@ -316,30 +314,19 @@ class AnimeONProvider : MainAPI() {
             Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
         } catch (e: Exception) { return false }
 
-        translations.forEach { item ->
+        for (item in translations) {
             val translationId = item.translation.id
             for (player in item.player) {
 
-                val realVideoUrl = if (episodeId != null) {
-                    try {
-                        val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode")
-                        if (epDetailJson != null) {
-                            Gson().fromJson(epDetailJson, FundubEpisode::class.java).videoUrl
-                        } else null
-                    } catch (e: Exception) { null }
-                } else null
-
                 var episode: FundubEpisode? = null
                 val startOffset = maxOf(0, ((targetEpisode - 1) / 100) * 100)
+
                 for (offset in startOffset..startOffset + 100 step 100) {
                     val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=\( offset&playerId= \){player.id}&translationId=$translationId"
                     val epJson = fetchJsonOrNull(epUrl) ?: continue
-                    val parsed = try {
-                        Gson().fromJson(epJson, PlayerEpisodes::class.java)
-                    } catch (e: Exception) { null } ?: continue
-                    val eps = parsed.episodes ?: emptyList()
-                    if (eps.isEmpty()) break
-                    episode = eps.firstOrNull { it.episode == targetEpisode }
+                    val parsed = try { Gson().fromJson(epJson, PlayerEpisodes::class.java) } catch (e: Exception) { null } ?: continue
+                    
+                    episode = parsed.episodes?.firstOrNull { it.episode == targetEpisode }
                     if (episode != null) break
                 }
 
@@ -353,7 +340,7 @@ class AnimeONProvider : MainAPI() {
                 }
 
                 // Moon
-                val videoUrl = realVideoUrl ?: episode?.videoUrl
+                val videoUrl = episode?.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
                     if (videoUrl.contains("m3u8")) {
                         M3u8Helper.generateM3u8(
@@ -368,19 +355,13 @@ class AnimeONProvider : MainAPI() {
                                 source = "\( {item.translation.name} ( \){player.name}) Moon",
                                 streamUrl = rawFile,
                                 referer = "https://moonanime.art/",
-                                headers = mapOf(
-                                    "User-Agent" to userAgent,
-                                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                                    "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
-                                    "Referer" to "https://animeon.club/"
-                                )
+                                headers = mapOf("Referer" to "https://animeon.club/")
                             ).dropLast(1).forEach(callback)
                         }
                     }
                 }
             }
         }
-
         return true
     }
 
@@ -412,13 +393,10 @@ class AnimeONProvider : MainAPI() {
     private suspend fun getMoonFile(iframeUrl: String): String {
         val html = app.get(iframeUrl, headers = mapOf(
             "User-Agent" to userAgent,
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
             "Referer" to "https://animeon.club/"
         )).text
 
-        // Виправлені Regex
-        val fileRegex = Regex("""file:\s*_0xd\(["']([^"']+)["']\)\)""")
+        val fileRegex = Regex("""file:\s*_0xd\(["']([^"']+)["']\)""")
         val directMatch = fileRegex.find(html)?.groupValues?.get(1)
         if (directMatch != null) {
             val result = moonDecrypt(directMatch)
@@ -435,12 +413,6 @@ class AnimeONProvider : MainAPI() {
     }
 
     private fun extractIntFromString(string: String): Int? {
-        val value = Regex("""\d+""").findAll(string).lastOrNull() ?: return null
-        val num = value.value
-        return if (num.startsWith("0") && num.length > 1) {
-            num.drop(1).toIntOrNull()
-        } else {
-            num.toIntOrNull()
-        }
+        return Regex("""\d+""").findAll(string).lastOrNull()?.value?.toIntOrNull()
     }
                   }
