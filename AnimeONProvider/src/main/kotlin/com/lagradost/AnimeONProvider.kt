@@ -1,51 +1,39 @@
 package com.lagradost
 
 import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.LoadResponse.Companion.addMalId
-import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
-import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.M3u8Helper
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
 
 class AnimeONProvider : MainAPI() {
 
     override var mainUrl = "https://animeon.club"
     override var name = "AnimeON"
-    override val hasMainPage = true
     override var lang = "uk"
-    override val hasQuickSearch = true
-    override val hasDownloadSupport = true
+    override val hasMainPage = true
 
-    override val supportedTypes = setOf(
-        TvType.Anime,
-        TvType.AnimeMovie,
-        TvType.OVA,
-    )
-
-    private val apiUrl = "$mainUrl/api/anime"
-    private val posterApi = "$mainUrl/api/uploads/images/%s"
     private val userAgent =
         "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/116"
 
-    private fun safeJson(url: String): String? {
+    private fun getJson(url: String): JsonElement? {
         return try {
-            val r = app.get(
+            app.get(
                 url,
                 headers = mapOf(
                     "Referer" to mainUrl,
                     "User-Agent" to userAgent
                 )
-            ).text
-            if (r.startsWith("{") || r.startsWith("[")) r else null
+            ).parsedSafe<JsonElement>()
         } catch (_: Exception) {
             null
         }
     }
 
-    // --------------------------
+    // -------------------------
     // LOAD LINKS (FIXED)
-    // --------------------------
+    // -------------------------
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -57,86 +45,82 @@ class AnimeONProvider : MainAPI() {
         if (parts.size < 2) return false
 
         val animeId = parts[0]
-        val episodeNum = parts[1].toIntOrNull() ?: return false
-        val episodeId = parts.getOrNull(2)?.toIntOrNull()
+        val epNum = parts[1].toIntOrNull() ?: return false
 
-        val translationsJson =
-            safeJson("$mainUrl/api/player/$animeId/translations") ?: return false
+        val translations = getJson("$mainUrl/api/player/$animeId/translations") ?: return false
 
-        val translations = try {
-            Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
-        } catch (_: Exception) {
-            return false
-        }
+        val arr = translations.asJsonObject["translations"]?.asJsonArray ?: return false
 
-        var foundAny = false
+        var success = false
 
-        translations.forEach { t ->
-            t.player.forEach { player ->
+        for (t in arr) {
+            val obj = t.asJsonObject
+            val translationId = obj["translation"]?.asJsonObject?.get("id")?.asInt ?: continue
 
-                // --------------------------
-                // EPISODE FETCH (safe)
-                // --------------------------
-                val epJson = safeJson(
-                    "$mainUrl/api/player/$animeId/episodes?take=200&skip=0" +
-                            "&playerId=${player.id}&translationId=${t.translation.id}"
-                ) ?: return@forEach
+            val players = obj["player"]?.asJsonArray ?: continue
 
-                val eps = try {
-                    Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
-                } catch (_: Exception) {
-                    emptyList()
-                }
+            for (p in players) {
+                val playerId = p.asJsonObject["id"]?.asInt ?: continue
 
-                val ep = eps.firstOrNull { it.episode == episodeNum } ?: return@forEach
+                val epsJson = getJson(
+                    "$mainUrl/api/player/$animeId/episodes" +
+                            "?take=200&skip=0&playerId=$playerId&translationId=$translationId"
+                ) ?: continue
 
-                // ======================================================
-                // 1) MOON FIRST (PRIORITY)
-                // ======================================================
-                val moonUrl = ep.videoUrl
+                val epsArr = epsJson.asJsonObject["episodes"]?.asJsonArray ?: continue
+
+                val ep = epsArr.firstOrNull {
+                    it.asJsonObject["episode"]?.asInt == epNum
+                } ?: continue
+
+                val epObj = ep.asJsonObject
+
+                // =========================
+                // MOON FIRST
+                // =========================
+                val moonUrl = epObj["videoUrl"]?.asString
 
                 if (!moonUrl.isNullOrBlank() && moonUrl.contains("moonanime.art")) {
 
-                    val moonStream = runCatching { getMoonFile(moonUrl) }.getOrNull()
+                    val moonStream = runCatching {
+                        getMoonFile(moonUrl)
+                    }.getOrNull()
 
-                    if (!moonStream.isNullOrBlank()) {
+                    if (!moonStream.isNullOrBlank() && moonStream.contains(".m3u8")) {
+                        M3u8Helper.generateM3u8(
+                            source = "Moon",
+                            streamUrl = moonStream,
+                            referer = "https://moonanime.art/"
+                        ).forEach(callback)
 
-                        if (moonStream.contains(".m3u8")) {
-                            M3u8Helper.generateM3u8(
-                                source = "Moon",
-                                streamUrl = moonStream,
-                                referer = "https://moonanime.art/"
-                            ).forEach(callback)
-
-                            foundAny = true
-                            return@forEach
-                        }
+                        success = true
+                        continue
                     }
                 }
 
-                // ======================================================
-                // 2) ASHDI FALLBACK
-                // ======================================================
-                val fileUrl = ep.fileUrl
-                if (!fileUrl.isNullOrBlank() && fileUrl.contains(".m3u8")) {
+                // =========================
+                // ASHDI FALLBACK
+                // =========================
+                val fileUrl = epObj["fileUrl"]?.asString
 
+                if (!fileUrl.isNullOrBlank() && fileUrl.contains(".m3u8")) {
                     M3u8Helper.generateM3u8(
                         source = "Ashdi",
                         streamUrl = fileUrl,
                         referer = "https://ashdi.vip"
                     ).forEach(callback)
 
-                    foundAny = true
+                    success = true
                 }
             }
         }
 
-        return foundAny
+        return success
     }
 
-    // --------------------------
-    // MOON DECODE (kept intact)
-    // --------------------------
+    // -------------------------
+    // MOON DECODER (UNCHANGED)
+    // -------------------------
     private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
         return try {
             val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
@@ -153,9 +137,9 @@ class AnimeONProvider : MainAPI() {
         }
     }
 
-    private fun moonOuterDecode(base64Blob: String): String {
+    private fun moonOuterDecode(blob: String): String {
         return try {
-            val raw = android.util.Base64.decode(base64Blob, android.util.Base64.DEFAULT)
+            val raw = android.util.Base64.decode(blob, android.util.Base64.DEFAULT)
             if (raw.size < 32) return ""
 
             val key = raw.sliceArray(0 until 32)
