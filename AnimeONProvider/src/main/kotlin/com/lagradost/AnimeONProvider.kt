@@ -136,8 +136,6 @@ class AnimeONProvider : MainAPI() {
                     val translationId = translation.translation.id
 
                     for (player in translation.player) {
-                        val collected = mutableListOf<FundubEpisode>()
-
                         for (offset in 0..5000 step 100) {
                             val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
                             val epJson = fetchJsonOrNull(epUrl) ?: break
@@ -146,38 +144,38 @@ class AnimeONProvider : MainAPI() {
                             } catch (e: Exception) { null }
 
                             if (eps.isNullOrEmpty()) break
-                            collected.addAll(eps)
-                            if (eps.size < 100) break
-                        }
 
-                        for (ep in collected) {
-                            if (!seenEpisodes.add(ep.episode)) continue
+                            for (ep in eps) {
+                                if (!seenEpisodes.add(ep.episode)) continue
 
-                            // УНІВЕРСАЛЬНА ЛОГІКА ПОСТЕРІВ ЕПІЗОДІВ
-                            val episodePoster = when {
-                                // 1. Якщо API віддає прямий постер
-                                !ep.poster.isNullOrBlank() && ep.poster.startsWith("http") -> ep.poster
-                                
-                                // 2. Якщо це Ashdi (будь-який піддомен і папка)
-                                !ep.fileUrl.isNullOrBlank() && ep.fileUrl.contains("ashdi.vip") -> {
-                                    if (ep.fileUrl.contains("/hls/")) {
-                                        ep.fileUrl.substringBefore("/hls/") + "/screen.jpg"
-                                    } else {
-                                        animePoster
+                                // Спроба дістати посилання на відео/файл для генерації постера
+                                val videoBase = ep.fileUrl ?: ep.videoUrl
+
+                                val episodePoster = when {
+                                    !ep.poster.isNullOrBlank() && ep.poster.startsWith("http") -> ep.poster
+                                    
+                                    !videoBase.isNullOrBlank() && videoBase.contains("ashdi") -> {
+                                        // Витягуємо все до папки hls або до імені файлу .m3u8
+                                        val folderPath = when {
+                                            videoBase.contains("/hls/") -> videoBase.substringBefore("/hls/")
+                                            videoBase.contains(".m3u8") -> videoBase.substringBeforeLast("/")
+                                            else -> null
+                                        }
+                                        if (folderPath != null) "$folderPath/screen.jpg" else animePoster
                                     }
+                                    
+                                    !animeJSON.backgroundImage.isNullOrBlank() -> animeJSON.backgroundImage
+                                    else -> animePoster
                                 }
-                                
-                                // 3. Фолбек на фон аніме або головний постер
-                                !animeJSON.backgroundImage.isNullOrBlank() -> animeJSON.backgroundImage
-                                else -> animePoster
-                            }
 
-                            episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
-                                this.name = "Епізод ${ep.episode}"
-                                this.posterUrl = episodePoster
-                                this.episode = ep.episode
-                                this.data = "$animeId, ${ep.episode}, ${ep.id}"
-                            })
+                                episodes.add(newEpisode("$animeId,${ep.episode},${ep.id}") {
+                                    this.name = "Епізод ${ep.episode}"
+                                    this.posterUrl = episodePoster
+                                    this.episode = ep.episode
+                                    this.data = "$animeId,${ep.episode},${ep.id}"
+                                })
+                            }
+                            if (eps.size < 100) break
                         }
                     }
                 }
@@ -220,7 +218,7 @@ class AnimeONProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val dataList = data.split(", ")
+        val dataList = data.split(",")
         if (dataList.size < 2) return false
 
         val animeId = dataList[0]
@@ -251,62 +249,29 @@ class AnimeONProvider : MainAPI() {
                     if (episode != null) break
                 }
 
-                val fileUrl = episode?.fileUrl
-                if (!fileUrl.isNullOrEmpty()) {
+                // Якщо в списку немає прямого посилання, спробуємо отримати його через детальну інфу епізоду
+                val finalFileUrl = if (episode?.fileUrl.isNullOrBlank() && episode?.id != null) {
+                    val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/${episode.id}/episode")
+                    try {
+                        Gson().fromJson(epDetailJson, FundubEpisode::class.java).fileUrl
+                    } catch (e: Exception) { null }
+                } else episode?.fileUrl
+
+                if (!finalFileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
                         source = "${item.translation.name} (${player.name})",
-                        streamUrl = fileUrl,
+                        streamUrl = finalFileUrl,
                         referer = "https://ashdi.vip"
                     ).forEach(callback)
                 }
             }
         }
-
         return true
     }
 
-    private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
-        return try {
-            val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
-            val result = StringBuilder()
-            for (i in decoded.indices) {
-                result.append((decoded[i].toInt() and 0xFF xor key[i % key.length].code).toChar())
-            }
-            result.toString()
-        } catch (e: Exception) { "" }
-    }
-
-    private fun moonOuterDecode(base64Blob: String): String {
-        return try {
-            val raw = android.util.Base64.decode(base64Blob, android.util.Base64.DEFAULT)
-            if (raw.size < 32) return ""
-            val key = raw.sliceArray(0 until 32)
-            val data = raw.sliceArray(32 until raw.size)
-            val result = StringBuilder()
-            for (i in data.indices) {
-                result.append(((data[i].toInt() and 0xFF) xor (key[i % 32].toInt() and 0xFF)).toChar())
-            }
-            result.toString()
-        } catch (e: Exception) { "" }
-    }
-
-    private suspend fun getMoonFile(iframeUrl: String): String {
-        val html = app.get(iframeUrl, headers = mapOf(
-            "User-Agent" to userAgent,
-            "Referer" to "https://animeon.club/"
-        )).text
-
-        val fileRegex = Regex("""file:\s*_0xd\(["']([^"']+)["']\)""")
-        val directMatch = fileRegex.find(html)?.groupValues?.get(1)
-        if (directMatch != null) {
-            val result = moonDecrypt(directMatch)
-            if (result.isNotEmpty()) return result
-        }
-        return ""
-    }
-
     private fun extractIntFromString(string: String): Int? {
-        val value = Regex("""\d+""").findAll(string).lastOrNull() ?: return null
-        return value.value.toIntOrNull()
+        return Regex("""\d+""").findAll(string).lastOrNull()?.value?.toIntOrNull()
     }
+
+    
 }
