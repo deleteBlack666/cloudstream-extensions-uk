@@ -212,7 +212,7 @@ class AnimeONProvider : MainAPI() {
             }
         }
 
-        val episodes = mutableListOf<Episode>()
+        val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
         val seenEpisodes = mutableSetOf<Int>()
 
         val translationsJson =
@@ -278,11 +278,6 @@ class AnimeONProvider : MainAPI() {
                             if (!seenEpisodes.add(ep.episode))
                                 continue
 
-                            val fixedPoster =
-                                ep.poster.takeIf {
-                                    !it.isNullOrBlank()
-                                }
-
                             episodes.add(
                                 newEpisode(
                                     "$animeId,${ep.episode},${ep.id}"
@@ -298,14 +293,16 @@ class AnimeONProvider : MainAPI() {
                                         "$animeId,${ep.episode},${ep.id}"
 
                                     this.posterUrl =
-                                        fixedPoster
+                                        ep.poster.takeIf {
+                                            !it.isNullOrBlank()
+                                        }
                                 }
                             )
                         }
                     }
                 }
 
-                episodes.sortBy { it.episode }
+                episodes.sortBy { ep -> ep.episode }
 
             } catch (_: Exception) {
             }
@@ -365,13 +362,6 @@ class AnimeONProvider : MainAPI() {
 
         if (split.size < 3)
             return false
-
-        val animeId =
-            split[0].trim()
-
-        val targetEpisode =
-            split[1].trim().toIntOrNull()
-                ?: return false
 
         val episodeId =
             split[2].trim().toIntOrNull()
