@@ -113,7 +113,6 @@ class AnimeONProvider : MainAPI() {
         val jsonText = fetchJsonOrNull("$apiUrl/$animeId") ?: throw Exception("Failed to load")
         val animeJSON = Gson().fromJson(jsonText, AnimeInfoModel::class.java)
 
-        val showStatus = if (animeJSON.status.contains("ongoing")) ShowStatus.Ongoing else ShowStatus.Completed
         val tvType = with(animeJSON.type) {
             when {
                 contains("tv") -> TvType.Anime
@@ -133,37 +132,25 @@ class AnimeONProvider : MainAPI() {
                 val seenEpisodes = mutableSetOf<Int>()
 
                 for (translation in translations) {
-                    val translationId = translation.translation.id
-
                     for (player in translation.player) {
                         for (offset in 0..5000 step 100) {
-                            val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
+                            val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=${translation.translation.id}"
                             val epJson = fetchJsonOrNull(epUrl) ?: break
-                            val eps = try {
-                                Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
-                            } catch (e: Exception) { null }
-
-                            if (eps.isNullOrEmpty()) break
+                            val eps = Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes ?: break
 
                             for (ep in eps) {
                                 if (!seenEpisodes.add(ep.episode)) continue
 
-                                // Спроба дістати посилання на відео/файл для генерації постера
-                                val videoBase = ep.fileUrl ?: ep.videoUrl
-
+                                // УНІВЕРСАЛЬНИЙ ПАРСИНГ ПРЕВ'Ю (ASHDI)
                                 val episodePoster = when {
                                     !ep.poster.isNullOrBlank() && ep.poster.startsWith("http") -> ep.poster
-                                    
-                                    !videoBase.isNullOrBlank() && videoBase.contains("ashdi") -> {
-                                        // Витягуємо все до папки hls або до імені файлу .m3u8
-                                        val folderPath = when {
-                                            videoBase.contains("/hls/") -> videoBase.substringBefore("/hls/")
-                                            videoBase.contains(".m3u8") -> videoBase.substringBeforeLast("/")
-                                            else -> null
+                                    !ep.fileUrl.isNullOrBlank() && ep.fileUrl.contains("ashdi.vip") -> {
+                                        if (ep.fileUrl.contains("/hls/")) {
+                                            ep.fileUrl.substringBefore("/hls/") + "/screen.jpg"
+                                        } else {
+                                            ep.fileUrl.substringBeforeLast("/") + "/screen.jpg"
                                         }
-                                        if (folderPath != null) "$folderPath/screen.jpg" else animePoster
                                     }
-                                    
                                     !animeJSON.backgroundImage.isNullOrBlank() -> animeJSON.backgroundImage
                                     else -> animePoster
                                 }
@@ -190,7 +177,7 @@ class AnimeONProvider : MainAPI() {
                 this.tags = animeJSON.genres.map { it.nameUa }
                 this.plot = animeJSON.description
                 addTrailer(animeJSON.trailer)
-                this.showStatus = showStatus
+                this.showStatus = if (animeJSON.status.contains("ongoing")) ShowStatus.Ongoing else ShowStatus.Completed
                 this.duration = extractIntFromString(animeJSON.episodeTime)
                 this.year = animeJSON.releaseDate.toIntOrNull()
                 this.score = Score.from10(animeJSON.rating)
@@ -205,7 +192,7 @@ class AnimeONProvider : MainAPI() {
                 addTrailer(animeJSON.trailer)
                 this.duration = extractIntFromString(animeJSON.episodeTime)
                 this.year = animeJSON.releaseDate.toIntOrNull()
-                this.backgroundPosterUrl = animeJSON.backgroundImage.takeIf { !it.isNullOrBlank() } ?: animePoster
+                this.backgroundPosterUrl = animeJSON.backgroundImage ?: animePoster
                 this.score = Score.from10(animeJSON.rating)
                 addMalId(animeJSON.malId.toIntOrNull())
             }
@@ -231,36 +218,26 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { return false }
 
         translations.forEach { item ->
-            val translationId = item.translation.id
             for (player in item.player) {
                 var episode: FundubEpisode? = null
                 val startOffset = maxOf(0, ((targetEpisode - 1) / 100) * 100)
                 
-                for (offset in startOffset..startOffset + 100 step 100) {
-                    val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
-                    val epJson = fetchJsonOrNull(epUrl) ?: continue
-                    val parsed = try {
-                        Gson().fromJson(epJson, PlayerEpisodes::class.java)
-                    } catch (e: Exception) { null } ?: continue
-                    
-                    val eps = parsed.episodes ?: emptyList()
-                    if (eps.isEmpty()) break
-                    episode = eps.firstOrNull { it.episode == targetEpisode }
-                    if (episode != null) break
-                }
+                val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$startOffset&playerId=${player.id}&translationId=${item.translation.id}"
+                val epJson = fetchJsonOrNull(epUrl) ?: continue
+                val eps = Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes ?: emptyList()
+                episode = eps.firstOrNull { it.episode == targetEpisode }
 
-                // Якщо в списку немає прямого посилання, спробуємо отримати його через детальну інфу епізоду
-                val finalFileUrl = if (episode?.fileUrl.isNullOrBlank() && episode?.id != null) {
-                    val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/${episode.id}/episode")
+                val fileUrl = episode?.fileUrl ?: if (episodeId != null) {
                     try {
+                        val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode")
                         Gson().fromJson(epDetailJson, FundubEpisode::class.java).fileUrl
                     } catch (e: Exception) { null }
-                } else episode?.fileUrl
+                } else null
 
-                if (!finalFileUrl.isNullOrEmpty()) {
+                if (!fileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
                         source = "${item.translation.name} (${player.name})",
-                        streamUrl = finalFileUrl,
+                        streamUrl = fileUrl,
                         referer = "https://ashdi.vip"
                     ).forEach(callback)
                 }
@@ -273,5 +250,20 @@ class AnimeONProvider : MainAPI() {
         return Regex("""\d+""").findAll(string).lastOrNull()?.value?.toIntOrNull()
     }
 
-    
+    private suspend fun getMoonFile(iframeUrl: String): String {
+        val html = app.get(iframeUrl, headers = mapOf("User-Agent" to userAgent, "Referer" to mainUrl)).text
+        val fileRegex = Regex("""file:\s*_0xd\(["']([^"']+)["']\)""")
+        return fileRegex.find(html)?.groupValues?.get(1)?.let { moonDecrypt(it) } ?: ""
+    }
+
+    private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
+        return try {
+            val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+            val result = StringBuilder()
+            for (i in decoded.indices) {
+                result.append((decoded[i].toInt() and 0xFF xor key[i % key.length].code).toChar())
+            }
+            result.toString()
+        } catch (e: Exception) { "" }
+    }
 }
