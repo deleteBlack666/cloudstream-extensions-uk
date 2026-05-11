@@ -153,16 +153,21 @@ class AnimeONProvider : MainAPI() {
                         for (ep in collected) {
                             if (!seenEpisodes.add(ep.episode)) continue
 
+                            // УНІВЕРСАЛЬНА ЛОГІКА ПОСТЕРІВ ЕПІЗОДІВ
                             val episodePoster = when {
+                                // 1. Якщо API віддає прямий постер
                                 !ep.poster.isNullOrBlank() && ep.poster.startsWith("http") -> ep.poster
-                                // Динамічна генерація скріншота для ashdi.vip
-                                !ep.fileUrl.isNullOrBlank() && ep.fileUrl.contains("ashdi.vip/content/stream/") -> {
+                                
+                                // 2. Якщо це Ashdi (будь-який піддомен і папка)
+                                !ep.fileUrl.isNullOrBlank() && ep.fileUrl.contains("ashdi.vip") -> {
                                     if (ep.fileUrl.contains("/hls/")) {
                                         ep.fileUrl.substringBefore("/hls/") + "/screen.jpg"
                                     } else {
                                         animePoster
                                     }
                                 }
+                                
+                                // 3. Фолбек на фон аніме або головний постер
                                 !animeJSON.backgroundImage.isNullOrBlank() -> animeJSON.backgroundImage
                                 else -> animePoster
                             }
@@ -195,9 +200,6 @@ class AnimeONProvider : MainAPI() {
                 addMalId(animeJSON.malId.toIntOrNull())
             }
         } else {
-            val backgroundImage = animeJSON.backgroundImage.takeIf { !it.isNullOrBlank() }
-                ?: animePoster
-
             newMovieLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType, "$animeId") {
                 this.posterUrl = animePoster
                 this.tags = animeJSON.genres.map { it.nameUa }
@@ -205,7 +207,7 @@ class AnimeONProvider : MainAPI() {
                 addTrailer(animeJSON.trailer)
                 this.duration = extractIntFromString(animeJSON.episodeTime)
                 this.year = animeJSON.releaseDate.toIntOrNull()
-                this.backgroundPosterUrl = backgroundImage
+                this.backgroundPosterUrl = animeJSON.backgroundImage.takeIf { !it.isNullOrBlank() } ?: animePoster
                 this.score = Score.from10(animeJSON.rating)
                 addMalId(animeJSON.malId.toIntOrNull())
             }
@@ -235,6 +237,7 @@ class AnimeONProvider : MainAPI() {
             for (player in item.player) {
                 var episode: FundubEpisode? = null
                 val startOffset = maxOf(0, ((targetEpisode - 1) / 100) * 100)
+                
                 for (offset in startOffset..startOffset + 100 step 100) {
                     val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
                     val epJson = fetchJsonOrNull(epUrl) ?: continue
@@ -254,10 +257,11 @@ class AnimeONProvider : MainAPI() {
                         source = "${item.translation.name} (${player.name})",
                         streamUrl = fileUrl,
                         referer = "https://ashdi.vip"
-                    ).dropLast(1).forEach(callback)
+                    ).forEach(callback)
                 }
             }
         }
+
         return true
     }
 
@@ -289,8 +293,6 @@ class AnimeONProvider : MainAPI() {
     private suspend fun getMoonFile(iframeUrl: String): String {
         val html = app.get(iframeUrl, headers = mapOf(
             "User-Agent" to userAgent,
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
             "Referer" to "https://animeon.club/"
         )).text
 
@@ -300,19 +302,11 @@ class AnimeONProvider : MainAPI() {
             val result = moonDecrypt(directMatch)
             if (result.isNotEmpty()) return result
         }
-
-        val atobRegex = Regex("""atob\(["']([^"']+)["']\)""")
-        val atobMatch = atobRegex.find(html)?.groupValues?.get(1) ?: return ""
-        val decodedJs = moonOuterDecode(atobMatch)
-        if (decodedJs.isEmpty()) return ""
-
-        val innerMatch = fileRegex.find(decodedJs)?.groupValues?.get(1) ?: return ""
-        return moonDecrypt(innerMatch)
+        return ""
     }
 
     private fun extractIntFromString(string: String): Int? {
         val value = Regex("""\d+""").findAll(string).lastOrNull() ?: return null
-        val num = value.value
-        return if (num.startsWith("0") && num.length > 1) num.drop(1).toIntOrNull() else num.toIntOrNull()
+        return value.value.toIntOrNull()
     }
 }
