@@ -2,22 +2,25 @@ package com.lagradost
 
 import com.google.gson.Gson
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.M3u8Helper
-import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.google.gson.JsonElement
-import com.google.gson.JsonObject
+import com.lagradost.cloudstream3.LoadResponse.Companion.addMalId
+import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
+import com.lagradost.cloudstream3.utils.*
 
 class AnimeONProvider : MainAPI() {
 
     override var mainUrl = "https://animeon.club"
     override var name = "AnimeON"
-    override var lang = "uk"
     override val hasMainPage = true
+    override var lang = "uk"
+
+    private val apiUrl = "$mainUrl/api/anime"
+    private val posterApi = "$mainUrl/api/uploads/images/%s"
 
     private val userAgent =
-        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/116"
+        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome Mobile"
 
-    private fun getJson(url: String): JsonElement? {
+    // ---------------- SAFE REQUEST ----------------
+    private suspend fun getJson(url: String): String? {
         return try {
             app.get(
                 url,
@@ -25,15 +28,70 @@ class AnimeONProvider : MainAPI() {
                     "Referer" to mainUrl,
                     "User-Agent" to userAgent
                 )
-            ).parsedSafe<JsonElement>()
-        } catch (_: Exception) {
+            ).text
+        } catch (e: Exception) {
             null
         }
     }
 
-    // -------------------------
-    // LOAD LINKS (FIXED)
-    // -------------------------
+    // ---------------- LOAD ----------------
+    override suspend fun load(url: String): LoadResponse {
+        val animeId = url.substringAfterLast("/").toIntOrNull()
+            ?: throw ErrorLoadingException("Bad id")
+
+        val json = getJson("$apiUrl/$animeId")
+            ?: throw ErrorLoadingException("No data")
+
+        val anime = Gson().fromJson(json, AnimeInfoModel::class.java)
+
+        val episodes = arrayListOf<Episode>()
+
+        // ---------------- EPISODES ----------------
+        val transJson = getJson("$mainUrl/api/player/$animeId/translations")
+
+        if (transJson != null) {
+            try {
+                val trans = Gson().fromJson(transJson, TranslationsResponse::class.java)
+
+                trans.translations.forEach { t ->
+                    t.player.forEach { player ->
+
+                        for (skip in 0..2000 step 100) {
+                            val epJson = getJson(
+                                "$mainUrl/api/player/$animeId/episodes?take=100&skip=$skip&playerId=${player.id}&translationId=${t.translation.id}"
+                            ) ?: continue
+
+                            val eps = try {
+                                Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
+                            } catch (e: Exception) {
+                                null
+                            } ?: continue
+
+                            eps.forEach { ep ->
+                                episodes.add(
+                                    Episode(
+                                        Data = "$animeId,${ep.episode},${ep.id}",
+                                        Name = "EP ${ep.episode}",
+                                        Episode = ep.episode
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        return newAnimeLoadResponse(anime.titleUa, url, TvType.Anime) {
+            posterUrl = posterApi.format(anime.image.preview)
+            this.engName = anime.titleEn
+            this.plot = anime.description
+            addEpisodes(DubStatus.Dubbed, episodes)
+            addMalId(anime.malId.toIntOrNull())
+        }
+    }
+
+    // ---------------- LINKS (MOON FIRST) ----------------
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -41,144 +99,61 @@ class AnimeONProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
 
-        val parts = data.split(", ")
-        if (parts.size < 2) return false
+        val parts = data.split(",")
+        if (parts.size < 3) return false
 
         val animeId = parts[0]
         val epNum = parts[1].toIntOrNull() ?: return false
+        val epId = parts[2]
 
-        val translations = getJson("$mainUrl/api/player/$animeId/translations") ?: return false
+        val transJson = getJson("$mainUrl/api/player/$animeId/translations") ?: return false
 
-        val arr = translations.asJsonObject["translations"]?.asJsonArray ?: return false
+        val trans = try {
+            Gson().fromJson(transJson, TranslationsResponse::class.java)
+        } catch (e: Exception) {
+            return false
+        }
 
-        var success = false
+        for (t in trans.translations) {
+            for (player in t.player) {
 
-        for (t in arr) {
-            val obj = t.asJsonObject
-            val translationId = obj["translation"]?.asJsonObject?.get("id")?.asInt ?: continue
+                val epJson = getJson(
+                    "$mainUrl/api/player/$epId/episode"
+                )
 
-            val players = obj["player"]?.asJsonArray ?: continue
+                val ep = try {
+                    Gson().fromJson(epJson, FundubEpisode::class.java)
+                } catch (e: Exception) {
+                    null
+                }
 
-            for (p in players) {
-                val playerId = p.asJsonObject["id"]?.asInt ?: continue
+                // ---------------- 1. MOON FIRST ----------------
+                ep?.videoUrl?.let { url ->
+                    if (url.contains("moonanime.art")) {
 
-                val epsJson = getJson(
-                    "$mainUrl/api/player/$animeId/episodes" +
-                            "?take=200&skip=0&playerId=$playerId&translationId=$translationId"
-                ) ?: continue
-
-                val epsArr = epsJson.asJsonObject["episodes"]?.asJsonArray ?: continue
-
-                val ep = epsArr.firstOrNull {
-                    it.asJsonObject["episode"]?.asInt == epNum
-                } ?: continue
-
-                val epObj = ep.asJsonObject
-
-                // =========================
-                // MOON FIRST
-                // =========================
-                val moonUrl = epObj["videoUrl"]?.asString
-
-                if (!moonUrl.isNullOrBlank() && moonUrl.contains("moonanime.art")) {
-
-                    val moonStream = runCatching {
-                        getMoonFile(moonUrl)
-                    }.getOrNull()
-
-                    if (!moonStream.isNullOrBlank() && moonStream.contains(".m3u8")) {
                         M3u8Helper.generateM3u8(
                             source = "Moon",
-                            streamUrl = moonStream,
+                            streamUrl = url,
                             referer = "https://moonanime.art/"
                         ).forEach(callback)
 
-                        success = true
-                        continue
+                        return true
                     }
                 }
 
-                // =========================
-                // ASHDI FALLBACK
-                // =========================
-                val fileUrl = epObj["fileUrl"]?.asString
-
-                if (!fileUrl.isNullOrBlank() && fileUrl.contains(".m3u8")) {
+                // ---------------- 2. ASHDI FALLBACK ----------------
+                ep?.fileUrl?.let { url ->
                     M3u8Helper.generateM3u8(
                         source = "Ashdi",
-                        streamUrl = fileUrl,
+                        streamUrl = url,
                         referer = "https://ashdi.vip"
                     ).forEach(callback)
 
-                    success = true
+                    return true
                 }
             }
         }
 
-        return success
-    }
-
-    // -------------------------
-    // MOON DECODER (UNCHANGED)
-    // -------------------------
-    private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
-        return try {
-            val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
-            val out = StringBuilder()
-
-            for (i in decoded.indices) {
-                out.append(
-                    (decoded[i].toInt() and 0xFF xor key[i % key.length].code).toChar()
-                )
-            }
-            out.toString()
-        } catch (_: Exception) {
-            ""
-        }
-    }
-
-    private fun moonOuterDecode(blob: String): String {
-        return try {
-            val raw = android.util.Base64.decode(blob, android.util.Base64.DEFAULT)
-            if (raw.size < 32) return ""
-
-            val key = raw.sliceArray(0 until 32)
-            val data = raw.sliceArray(32 until raw.size)
-
-            val out = StringBuilder()
-
-            for (i in data.indices) {
-                out.append(
-                    ((data[i].toInt() and 0xFF) xor (key[i % 32].toInt() and 0xFF)).toChar()
-                )
-            }
-            out.toString()
-        } catch (_: Exception) {
-            ""
-        }
-    }
-
-    private suspend fun getMoonFile(url: String): String {
-        val html = app.get(
-            url,
-            headers = mapOf(
-                "User-Agent" to userAgent,
-                "Referer" to "https://animeon.club/"
-            )
-        ).text
-
-        val fileRegex = Regex("""file:\s*_0xd\(["']([^"']+)["']\)""")
-        val atobRegex = Regex("""atob\(["']([^"']+)["']\)""")
-
-        fileRegex.find(html)?.groupValues?.getOrNull(1)?.let {
-            val decoded = moonDecrypt(it)
-            if (decoded.isNotBlank()) return decoded
-        }
-
-        val atob = atobRegex.find(html)?.groupValues?.getOrNull(1) ?: return ""
-        val decodedJs = moonOuterDecode(atob)
-
-        return fileRegex.find(decodedJs)?.groupValues?.getOrNull(1)
-            ?.let { moonDecrypt(it) } ?: ""
+        return false
     }
 }
