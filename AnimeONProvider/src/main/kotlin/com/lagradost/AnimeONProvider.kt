@@ -57,9 +57,8 @@ class AnimeONProvider : MainAPI() {
                 java.util.Locale.ENGLISH
             ).format(java.util.Date())
 
-            val jsonText = fetchJsonOrNull(
-                "${request.data}$currentDate?withView=false"
-            ) ?: return newHomePageResponse(request.name, emptyList())
+            val jsonText = fetchJsonOrNull("${request.data}$currentDate?withView=false")
+                ?: return newHomePageResponse(request.name, emptyList())
 
             val parsedJSON = Gson().fromJson<List<Results>>(jsonText, listResults)
 
@@ -75,8 +74,7 @@ class AnimeONProvider : MainAPI() {
         }
 
         val jsonText = fetchJsonOrNull(
-            if (request.data.contains("%d")) request.data.format(page)
-            else request.data
+            if (request.data.contains("%d")) request.data.format(page) else request.data
         ) ?: return newHomePageResponse(request.name, emptyList())
 
         return if (!request.data.contains("seasons")) {
@@ -112,8 +110,7 @@ class AnimeONProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
         val animeId = url.substringAfterLast("/").substringBefore("-").toInt()
-        val jsonText = fetchJsonOrNull("$apiUrl/$animeId")
-            ?: throw Exception("Failed to load")
+        val jsonText = fetchJsonOrNull("$apiUrl/$animeId") ?: throw Exception("Failed to load")
         val animeJSON = Gson().fromJson(jsonText, AnimeInfoModel::class.java)
 
         val showStatus = if (animeJSON.status.contains("ongoing")) ShowStatus.Ongoing else ShowStatus.Completed
@@ -127,7 +124,6 @@ class AnimeONProvider : MainAPI() {
         }
 
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
-
         val animePoster = posterApi.format(animeJSON.image.preview)
 
         val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
@@ -157,7 +153,6 @@ class AnimeONProvider : MainAPI() {
                         for (ep in collected) {
                             if (!seenEpisodes.add(ep.episode)) continue
 
-                            // Логіка прев'ю епізоду
                             val episodePoster = when {
                                 !ep.poster.isNullOrBlank() && ep.poster.startsWith("http") -> ep.poster
 
@@ -204,10 +199,8 @@ class AnimeONProvider : MainAPI() {
                 addMalId(animeJSON.malId.toIntOrNull())
             }
         } else {
-            val backgroundImage = if (animeJSON.backgroundImage.isNullOrBlank())
-                posterApi.format(animeJSON.image.preview)
-            else
-                animeJSON.backgroundImage
+            val backgroundImage = animeJSON.backgroundImage.takeIf { !it.isNullOrBlank() }
+                ?: posterApi.format(animeJSON.image.preview)
 
             newMovieLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType, "$animeId") {
                 this.posterUrl = posterApi.format(animeJSON.image.preview)
@@ -248,9 +241,9 @@ class AnimeONProvider : MainAPI() {
                 val realVideoUrl = if (episodeId != null) {
                     try {
                         val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode")
-                        if (epDetailJson != null) {
-                            Gson().fromJson(epDetailJson, FundubEpisode::class.java).videoUrl
-                        } else null
+                        epDetailJson?.let {
+                            Gson().fromJson(it, FundubEpisode::class.java).videoUrl
+                        }
                     } catch (e: Exception) { null }
                 } else null
 
@@ -262,6 +255,7 @@ class AnimeONProvider : MainAPI() {
                     val parsed = try {
                         Gson().fromJson(epJson, PlayerEpisodes::class.java)
                     } catch (e: Exception) { null } ?: continue
+                    
                     val eps = parsed.episodes ?: emptyList()
                     if (eps.isEmpty()) break
                     episode = eps.firstOrNull { it.episode == targetEpisode }
@@ -288,6 +282,7 @@ class AnimeONProvider : MainAPI() {
                         ).dropLast(1).forEach(callback)
                         break
                     }
+
                     val rawFile = getMoonFile(videoUrl)
                     if (rawFile.isNotEmpty()) {
                         val sourceName = "\( {item.translation.name} ( \){player.name})"
@@ -363,15 +358,15 @@ class AnimeONProvider : MainAPI() {
             "Referer" to "https://animeon.club/"
         )).text
 
-        val fileRegex = Regex("""file:\s*_0xd\(["']([^"']+)["']\)""")
-
+        // Виправлені Regex
+        val fileRegex = Regex("""file:\s*_0xd\(["']([^"']+)["']\)\)""")
         val directMatch = fileRegex.find(html)?.groupValues?.get(1)
         if (directMatch != null) {
             val result = moonDecrypt(directMatch)
             if (result.isNotEmpty()) return result
         }
 
-        val atobRegex = Regex("""atob\(["']([^"']+)["']\)""")
+        val atobRegex = Regex("""atob\(["']([^"']+)["']\)\)""")
         val atobMatch = atobRegex.find(html)?.groupValues?.get(1) ?: return ""
         val decodedJs = moonOuterDecode(atobMatch)
         if (decodedJs.isEmpty()) return ""
@@ -381,8 +376,8 @@ class AnimeONProvider : MainAPI() {
     }
 
     private fun extractIntFromString(string: String): Int? {
-        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
-        if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
-        return value.value.toIntOrNull()
+        val value = Regex("""\d+""").findAll(string).lastOrNull() ?: return null
+        val num = value.value
+        return if (num.startsWith("0") && num.length > 1) num.drop(1).toIntOrNull() else num.toIntOrNull()
     }
 }
