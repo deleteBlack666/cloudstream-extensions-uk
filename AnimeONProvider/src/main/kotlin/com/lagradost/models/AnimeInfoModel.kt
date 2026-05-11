@@ -25,6 +25,7 @@ class AnimeInfoModel (
     @SerializedName("genres" ) var genres : List<Genres>,
     @SerializedName("image" ) var image : Image,
     @SerializedName("slug" ) var slug : String? = null
+    @SerializedName("players") var players: List<String>? = null
 )
 
 data class Genres (
