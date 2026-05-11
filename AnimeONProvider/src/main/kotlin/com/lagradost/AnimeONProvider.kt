@@ -205,19 +205,16 @@ class AnimeONProvider : MainAPI() {
 
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
 
-        // Основний спосіб — через translations
         val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
 
         if (translationsJson != null) {
             try {
                 val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
                 episodes.addAll(collectEpisodes(animeId, translations))
-            } catch (e: Exception) {
-                // Буде використано fallback нижче
-            }
+            } catch (e: Exception) {}
         }
 
-        // Fallback — якщо /translations не працює
+        // Fallback
         if (episodes.isEmpty()) {
             val knownPlayerIds = listOf(3888, 7927, 3466, 3774, 3792, 7745, 308, 266, 5538, 5539, 5540)
             val knownTranslationIds = listOf(1093, 1098, 1105, 1110, 1167, 1179, 1400)
@@ -267,7 +264,6 @@ class AnimeONProvider : MainAPI() {
             }
         }
 
-        // === Повертаємо LoadResponse ===
         return if (tvType == TvType.Anime || tvType == TvType.OVA) {
             newAnimeLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType) {
                 this.posterUrl = posterApi.format(animeJSON.image.preview)
@@ -348,8 +344,7 @@ class AnimeONProvider : MainAPI() {
                 }
 
                 // Ashdi
-                val fileUrl = episode?.fileUrl
-                if (!fileUrl.isNullOrEmpty()) {
+                episode?.fileUrl?.let { fileUrl ->
                     M3u8Helper.generateM3u8(
                         source = "\( {item.translation.name} ( \){player.name})",
                         streamUrl = fileUrl,
@@ -422,7 +417,8 @@ class AnimeONProvider : MainAPI() {
             "Referer" to "https://animeon.club/"
         )).text
 
-        val fileRegex = Regex("""file:\s*_0xd\(["']([^"']+)["']\)""")
+        // Виправлені Regex
+        val fileRegex = Regex("""file:\s*_0xd\(["']([^"']+)["']\)\)""")
         val directMatch = fileRegex.find(html)?.groupValues?.get(1)
         if (directMatch != null) {
             val result = moonDecrypt(directMatch)
@@ -439,11 +435,12 @@ class AnimeONProvider : MainAPI() {
     }
 
     private fun extractIntFromString(string: String): Int? {
-        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
-        return if (value.value.startsWith("0")) {
-            value.value.drop(1).toIntOrNull()
+        val value = Regex("""\d+""").findAll(string).lastOrNull() ?: return null
+        val num = value.value
+        return if (num.startsWith("0") && num.length > 1) {
+            num.drop(1).toIntOrNull()
         } else {
-            value.value.toIntOrNull()
+            num.toIntOrNull()
         }
     }
                   }
