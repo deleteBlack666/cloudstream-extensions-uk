@@ -47,7 +47,7 @@ class AnimeONProvider : MainAPI() {
             if (!response.trimStart().startsWith("{") && !response.trimStart().startsWith("[")) null
             else response
         } catch (e: Exception) { null }
-    }
+    )
 
     // Парсить screen.jpg з HTML сторінки ashdi плеєра
     private suspend fun getAshdiPoster(videoUrl: String?): String? {
