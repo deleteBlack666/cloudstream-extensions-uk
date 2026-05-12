@@ -262,7 +262,7 @@ class AnimeONProvider : MainAPI() {
     val targetEpisode = dataList[1].toIntOrNull() ?: return false
     val episodeId = dataList[2].toIntOrNull() ?: return false
 
-    // 1. Отримуємо videoUrl через прямий запит до /episode
+    // Отримуємо videoUrl через прямий запит до /episode
     val episodeJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode") ?: return false
     val fundubEpisode = try {
         Gson().fromJson(episodeJson, FundubEpisode::class.java)
@@ -270,29 +270,15 @@ class AnimeONProvider : MainAPI() {
     
     var videoUrl = fundubEpisode.videoUrl ?: return false
 
-    // 2. Для Moon – отримуємо реальне HLS-посилання через getMoonFile
+    // Для Moon – отримуємо реальне HLS-посилання через getMoonFile
     if (videoUrl.contains("moonanime.art")) {
         videoUrl = getMoonFile(videoUrl)
         if (videoUrl.isEmpty()) return false
     }
 
-    
-    val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations") ?: return false
-    val translations = try {
-        Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
-    } catch (e: Exception) { return false }
-    
-    var sourceName = "Аніме"
-    for (translation in translations) {
-        for (player in translation.player) {
-            if (player.id == fundubEpisode.playerId) {
-                sourceName = "${translation.translation.name} (${player.name})"
-                break
-            }
-        }
-    }
+    // Використовуємо загальне джерело
+    val sourceName = "AnimeON"
 
-    // 4. Передаємо відеопотік у M3u8Helper
     M3u8Helper.generateM3u8(
         source = sourceName,
         streamUrl = videoUrl,
