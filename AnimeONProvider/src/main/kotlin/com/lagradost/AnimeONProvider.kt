@@ -256,61 +256,54 @@ class AnimeONProvider : MainAPI() {
     callback: (ExtractorLink) -> Unit
 ): Boolean {
     val dataList = data.split(", ")
-    if (dataList.size < 2) return false
+    if (dataList.size < 3) return false
 
     val animeId = dataList[0]
     val targetEpisode = dataList[1].toIntOrNull() ?: return false
+    val episodeId = dataList[2].toIntOrNull() ?: return false
 
+    // 1. Отримуємо videoUrl через прямий запит до /episode
+    val episodeJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode") ?: return false
+    val fundubEpisode = try {
+        Gson().fromJson(episodeJson, FundubEpisode::class.java)
+    } catch (e: Exception) { return false }
+    
+    var videoUrl = fundubEpisode.videoUrl ?: return false
+
+    // 2. Для Moon – отримуємо реальне HLS-посилання через getMoonFile
+    if (videoUrl.contains("moonanime.art")) {
+        videoUrl = getMoonFile(videoUrl)
+        if (videoUrl.isEmpty()) return false
+    }
+
+    
     val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations") ?: return false
     val translations = try {
         Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
     } catch (e: Exception) { return false }
-
-    translations.forEach { item ->
-        val translationId = item.translation.id
-        for (player in item.player) {
-            var episode: FundubEpisode? = null
-            var skip = 0
-            while (episode == null && skip < 2000) {
-                val episodesUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$skip&playerId=${player.id}&translationId=$translationId"
-                val json = fetchJsonOrNull(episodesUrl) ?: break
-                val data = try {
-                    Gson().fromJson(json, PlayerEpisodes::class.java)
-                } catch (e: Exception) { null } ?: break
-                
-                val episodesList = data.episodes ?: emptyList()
-                episode = episodesList.firstOrNull { it.episode == targetEpisode }
-                if (episodesList.size < 100) break
-                skip += 100
-            }
-            if (episode == null) continue
-
-            var videoLink: String? = null
-            if (player.name.equals("Ashdi", ignoreCase = true)) {
-                videoLink = episode.fileUrl
-            } else if (!episode.videoUrl.isNullOrEmpty()) {
-                videoLink = if (episode.videoUrl.contains("m3u8")) {
-                    episode.videoUrl
-                } else {
-                    getMoonFile(episode.videoUrl)
-                }
-            }
-
-            if (!videoLink.isNullOrEmpty()) {
-                M3u8Helper.generateM3u8(
-                    source = "${item.translation.name} (${player.name})",
-                    streamUrl = videoLink,
-                    referer = when {
-                        videoLink.contains("ashdi") -> "https://ashdi.vip"
-                        videoLink.contains("moon") -> "https://moonanime.art/"
-                        else -> mainUrl
-                    }
-                ).dropLast(1).forEach(callback)
-                return true
+    
+    var sourceName = "Аніме"
+    for (translation in translations) {
+        for (player in translation.player) {
+            if (player.id == fundubEpisode.playerId) {
+                sourceName = "${translation.translation.name} (${player.name})"
+                break
             }
         }
     }
-    return false
+
+    // 4. Передаємо відеопотік у M3u8Helper
+    M3u8Helper.generateM3u8(
+        source = sourceName,
+        streamUrl = videoUrl,
+        referer = when {
+            videoUrl.contains("ashdi") -> "https://ashdi.vip"
+            videoUrl.contains("moon") -> "https://moonanime.art/"
+            else -> mainUrl
+        }
+    ).dropLast(1).forEach(callback)
+    
+    return true
     }
     
 
