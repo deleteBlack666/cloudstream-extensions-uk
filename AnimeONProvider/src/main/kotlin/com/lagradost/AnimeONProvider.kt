@@ -51,18 +51,21 @@ class AnimeONProvider : MainAPI() {
 
     // Парсить screen.jpg з HTML сторінки ashdi плеєра
     private suspend fun getAshdiPoster(videoUrl: String?): String? {
-        if (videoUrl.isNullOrEmpty()) return null
-        if (!videoUrl.contains("ashdi.vip")) return null
-        val url = if (videoUrl.contains("?")) videoUrl else "$videoUrl?player=animeon.club"
-        return try {
-            val html = app.get(url, headers = mapOf(
-                "User-Agent" to userAgent,
-                "Referer" to "$mainUrl/"
-            )).text
-            val screenRegex = Regex("""https?://[^"'\s]+screen\.jpg""")
-            val match = screenRegex.find(html)?.value ?: return null
-            "https://" + match.removePrefix("http://").removePrefix("https://")
-        } catch (e: Exception) { null }
+    if (videoUrl.isNullOrEmpty()) return null
+    if (!videoUrl.contains("ashdi.vip")) return null
+    val url = if (videoUrl.contains("?")) videoUrl else "$videoUrl?player=animeon.club"
+    return try {
+        val html = app.get(url, headers = mapOf(
+            "User-Agent" to userAgent,
+            "Referer" to "$mainUrl/"
+        )).text
+        // Ловимо всі варіанти: https://, http://, //
+        val screenRegex = Regex("""(?:https?:)?//[^"'\s]+screen\.jpg""")
+        val match = screenRegex.find(html)?.value ?: return null
+        // Завжди повертаємо https://
+        if (match.startsWith("//")) "https:$match"
+        else "https://" + match.removePrefix("http://").removePrefix("https://")
+    } catch (e: Exception) { null }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
