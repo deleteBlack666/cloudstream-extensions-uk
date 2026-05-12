@@ -151,37 +151,45 @@ class AnimeONProvider : MainAPI() {
         if (translationsJson != null) {
             try {
                 val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
-
-                // episodeNumber -> posterUrl (готовий постер)
-                val episodePosterMap = mutableMapOf<Int, String>()
-                // episodeNumber -> ashdi videoUrl (для парсингу якщо немає постера)
-                val episodeAshdiVideoMap = mutableMapOf<Int, String>()
-                // episodeNumber -> FundubEpisode (перший знайдений для data/id)
-                val collectedEpisodes = mutableMapOf<Int, FundubEpisode>()
                 val seenEpisodes = mutableSetOf<Int>()
+                for (translation in translations) {
+                    val translationId = translation.translation.id
+                    for (player in translation.player) {
+                        val collected = mutableListOf<FundubEpisode>()
 
-                
+                        for (offset in 0..5000 step 100) {
+                            val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
+                            val epJson = fetchJsonOrNull(epUrl) ?: break
+                            val eps = try {
+                                Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
+                            } catch (e: Exception) { null }
 
-                // Парсимо постери з ashdi тільки для тих епізодів де немає постера
-                for ((epNum, videoUrl) in episodeAshdiVideoMap) {
-                    if (!episodePosterMap.containsKey(epNum)) {
-                        val poster = getAshdiPoster(videoUrl)
-                        if (poster != null) {
-                            episodePosterMap[epNum] = poster
+                            if (eps.isNullOrEmpty()) break
+                            collected.addAll(eps)
+                            if (eps.size < 100) break
+                        }
+
+                        for (ep in collected) {
+                            if (seenEpisodes.add(ep.episode)) {
+                                // Якщо poster є — використовуємо його,
+                                // інакше парсимо screen.jpg з ashdi плеєра
+                                val posterUrl = if (!ep.poster.isNullOrEmpty()) {
+                                    ep.poster
+                                } else {
+                                    getAshdiPoster(ep.videoUrl)
+                                }
+
+                                episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
+                                    this.name = "Епізод ${ep.episode}"
+                                    this.posterUrl = posterUrl
+                                    this.episode = ep.episode
+                                    this.data = "$animeId, ${ep.episode}, ${ep.id}"
+                                })
+                            }
                         }
                     }
                 }
-
-                // Формуємо фінальний список епізодів
-                for ((epNum, ep) in collectedEpisodes.entries.sortedBy { it.key }) {
-                    episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
-                        this.name = "Епізод ${ep.episode}"
-                        this.posterUrl = episodePosterMap[epNum]
-                        this.episode = ep.episode
-                        this.data = "$animeId, ${ep.episode}, ${ep.id}"
-                    })
-                }
-
+                episodes.sortBy { it.episode }
             } catch (e: Exception) { }
         }
 
