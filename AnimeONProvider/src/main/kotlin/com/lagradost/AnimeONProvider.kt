@@ -118,7 +118,6 @@ class AnimeONProvider : MainAPI() {
             Gson().fromJson(jsonText, NewAnimeModel::class.java).results.map {
                 newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
                     this.posterUrl = posterApi.format(it.image.preview)
-                    addDubStatus(isDub = true, it.episodes)
                 }
             }
         } catch (e: Exception) { emptyList() }
