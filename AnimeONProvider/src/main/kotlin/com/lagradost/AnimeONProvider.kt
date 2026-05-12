@@ -27,6 +27,7 @@ class AnimeONProvider : MainAPI() {
 
     private val apiUrl = "$mainUrl/api/anime"
     private val posterApi = "$mainUrl/api/uploads/images/%s"
+    private val searchApi = "$apiUrl/search?text="
     private val userAgent = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
 
     override val mainPage = mainPageOf(
@@ -241,6 +242,7 @@ class AnimeONProvider : MainAPI() {
         translations.forEach { item ->
             val translationId = item.translation.id
             for (player in item.player) {
+
                 val realVideoUrl = if (episodeId != null) {
                     try {
                         val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode")
@@ -369,7 +371,8 @@ class AnimeONProvider : MainAPI() {
         return moonDecrypt(innerMatch)
     }
 
-    private fun extractIntFromString(string: String): Int? {
+    private fun extractIntFromString(string: String?): Int? {
+        if (string == null) return null
         val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
         if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
         return value.value.toIntOrNull()
