@@ -119,15 +119,41 @@ class AnimeONProvider : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val jsonText = fetchJsonOrNull(searchApi + query) ?: return emptyList()
-        return try {
-            Gson().fromJson(jsonText, SearchModel::class.java).result.map {
+        val allResults = mutableListOf<SearchResponse>()
+        var pageIndex = 0
+        var hasMore = true
+
+        while (hasMore) {
+            val url = "$searchApi$query&pageIndex=$pageIndex&pageSize=24"
+            val jsonText = fetchJsonOrNull(url) ?: break
+
+            val searchData = try {
+                Gson().fromJson(jsonText, SearchModel::class.java)
+            } catch (e: Exception) {
+                break
+            }
+
+            if (searchData.result.isEmpty()) {
+                hasMore = false
+                break
+            }
+
+            allResults.addAll(searchData.result.map {
                 newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
                     this.posterUrl = posterApi.format(it.image.preview)
                     addDubStatus(isDub = true, it.episodes)
                 }
+            })
+
+            if (searchData.result.size < 24) {
+                hasMore = false
+            } else {
+                pageIndex++
+                if (pageIndex > 5) hasMore = false
             }
-        } catch (e: Exception) { emptyList() }
+        }
+
+        return allResults
     }
 
     override suspend fun load(url: String): LoadResponse {
