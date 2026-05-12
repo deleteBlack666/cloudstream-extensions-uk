@@ -149,26 +149,10 @@ class AnimeONProvider : MainAPI() {
         if (translationsJson != null) {
             try {
                 val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
-
-                // Збираємо постери окремо: episodeNumber -> posterUrl
-                // Пріоритет: якщо poster вже є в API — використовуємо одразу,
-                // інакше запам'ятовуємо videoUrl для ashdi щоб парсити пізніше
-                val episodePosterMap = mutableMapOf<Int, String>()
-                val episodeAshdiVideoMap = mutableMapOf<Int, String>() // для fallback
-
                 val seenEpisodes = mutableSetOf<Int>()
-                val collectedEpisodes = mutableMapOf<Int, FundubEpisode>()
-
                 for (translation in translations) {
                     val translationId = translation.translation.id
-
-                    // Moon першим — там poster вже є в API відповіді
-                    // Ashdi другим — там потрібно парсити HTML
-                    val sortedPlayers = translation.player.sortedByDescending {
-                        it.name.lowercase() == "moon"
-                    }
-
-                    for (player in sortedPlayers) {
+                    for (player in translation.player) {
                         val collected = mutableListOf<FundubEpisode>()
 
                         for (offset in 0..5000 step 100) {
@@ -184,45 +168,26 @@ class AnimeONProvider : MainAPI() {
                         }
 
                         for (ep in collected) {
-                            // Зберігаємо перший знайдений епізод для data/id
                             if (seenEpisodes.add(ep.episode)) {
-                                collectedEpisodes[ep.episode] = ep
-                            }
-
-                            // Постер: пріоритет — перший непорожній
-                            if (!episodePosterMap.containsKey(ep.episode)) {
-                                if (!ep.poster.isNullOrEmpty()) {
-                                    // Є готовий постер (Moon зазвичай)
-                                    episodePosterMap[ep.episode] = ep.poster
-                                } else if (!ep.videoUrl.isNullOrEmpty() && ep.videoUrl.contains("ashdi.vip")) {
-                                    // Запам'ятовуємо ashdi videoUrl для парсингу
-                                    episodeAshdiVideoMap[ep.episode] = ep.videoUrl
+                                // Якщо poster є — використовуємо його,
+                                // інакше парсимо screen.jpg з ashdi плеєра
+                                val posterUrl = if (!ep.poster.isNullOrEmpty()) {
+                                    ep.poster
+                                } else {
+                                    getAshdiPoster(ep.videoUrl)
                                 }
+
+                                episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
+                                    this.name = "Епізод ${ep.episode}"
+                                    this.posterUrl = posterUrl
+                                    this.episode = ep.episode
+                                    this.data = "$animeId, ${ep.episode}, ${ep.id}"
+                                })
                             }
                         }
                     }
                 }
-
-                // Парсимо постери з ashdi тільки для тих епізодів де немає постера
-                for ((epNum, videoUrl) in episodeAshdiVideoMap) {
-                    if (!episodePosterMap.containsKey(epNum)) {
-                        val poster = getAshdiPoster(videoUrl)
-                        if (poster != null) {
-                            episodePosterMap[epNum] = poster
-                        }
-                    }
-                }
-
-                // Формуємо фінальний список епізодів
-                for ((epNum, ep) in collectedEpisodes.entries.sortedBy { it.key }) {
-                    episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
-                        this.name = "Епізод ${ep.episode}"
-                        this.posterUrl = episodePosterMap[epNum]
-                        this.episode = ep.episode
-                        this.data = "$animeId, ${ep.episode}, ${ep.id}"
-                    })
-                }
-
+                episodes.sortBy { it.episode }
             } catch (e: Exception) { }
         }
 
