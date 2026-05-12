@@ -36,6 +36,7 @@ class AnimeONProvider : MainAPI() {
         "$apiUrl?pageSize=24&pageIndex=%d" to "Нове аніме на сайті",
     )
 
+    // Клас Results використовується для головної сторінки (NewAnimeModel.kt)
     private val listResults = object : TypeToken<List<Results>>() {}.type
 
     private suspend fun fetchJsonOrNull(url: String): String? {
@@ -115,9 +116,10 @@ class AnimeONProvider : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val jsonText = fetchJsonOrNull(searchApi + query) ?: return emptyList()
+        val url = searchApi + query
+        val jsonText = fetchJsonOrNull(url) ?: return emptyList()
         return try {
-            // Виправлено: використовуємо .results замість .result
+            // Використовуємо SearchModel.kt де поле називається results
             val parsed = Gson().fromJson(jsonText, SearchModel::class.java)
             parsed.results.map {
                 val tvType = when (it.type) {
@@ -131,7 +133,7 @@ class AnimeONProvider : MainAPI() {
                 }
             }
         } catch (e: Exception) {
-            Log.e("AnimeON", "Search parsing error: $e")
+            Log.e("AnimeON", "Search error: $e")
             emptyList()
         }
     }
@@ -252,6 +254,7 @@ class AnimeONProvider : MainAPI() {
         translations.forEach { item ->
             val translationId = item.translation.id
             for (player in item.player) {
+
                 val realVideoUrl = if (episodeId != null) {
                     try {
                         val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode")
@@ -329,6 +332,7 @@ class AnimeONProvider : MainAPI() {
                 }
             }
         }
+
         return true
     }
 
