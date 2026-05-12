@@ -150,20 +150,18 @@ class AnimeONProvider : MainAPI() {
             try {
                 val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
 
-                // Збираємо постери окремо: episodeNumber -> posterUrl
-                // Пріоритет: якщо poster вже є в API — використовуємо одразу,
-                // інакше запам'ятовуємо videoUrl для ashdi щоб парсити пізніше
+                // episodeNumber -> posterUrl (готовий постер)
                 val episodePosterMap = mutableMapOf<Int, String>()
-                val episodeAshdiVideoMap = mutableMapOf<Int, String>() // для fallback
-
-                val seenEpisodes = mutableSetOf<Int>()
+                // episodeNumber -> ashdi videoUrl (для парсингу якщо немає постера)
+                val episodeAshdiVideoMap = mutableMapOf<Int, String>()
+                // episodeNumber -> FundubEpisode (перший знайдений для data/id)
                 val collectedEpisodes = mutableMapOf<Int, FundubEpisode>()
+                val seenEpisodes = mutableSetOf<Int>()
 
                 for (translation in translations) {
                     val translationId = translation.translation.id
 
                     // Moon першим — там poster вже є в API відповіді
-                    // Ashdi другим — там потрібно парсити HTML
                     val sortedPlayers = translation.player.sortedByDescending {
                         it.name.lowercase() == "moon"
                     }
@@ -184,12 +182,7 @@ class AnimeONProvider : MainAPI() {
                         }
 
                         for (ep in collected) {
-                            // Зберігаємо перший знайдений епізод для data/id
-                            if (seenEpisodes.add(ep.episode)) {
-                                collectedEpisodes[ep.episode] = ep
-                            }
-
-                            // Постер: пріоритет — перший непорожній
+                            // Постери збираємо для ВСІХ епізодів незалежно від seenEpisodes
                             if (!episodePosterMap.containsKey(ep.episode)) {
                                 if (!ep.poster.isNullOrEmpty()) {
                                     // Є готовий постер (Moon зазвичай)
@@ -198,6 +191,11 @@ class AnimeONProvider : MainAPI() {
                                     // Запам'ятовуємо ashdi videoUrl для парсингу
                                     episodeAshdiVideoMap[ep.episode] = ep.videoUrl
                                 }
+                            }
+
+                            // Епізод в список — тільки перший раз
+                            if (seenEpisodes.add(ep.episode)) {
+                                collectedEpisodes[ep.episode] = ep
                             }
                         }
                     }
@@ -426,4 +424,4 @@ class AnimeONProvider : MainAPI() {
         if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
         return value.value.toIntOrNull()
     }
-} 
+}
