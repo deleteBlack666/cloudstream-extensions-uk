@@ -49,19 +49,22 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
+    // Парсить screen.jpg з HTML сторінки ashdi плеєра
     private suspend fun getAshdiPoster(videoUrl: String?): String? {
-        if (videoUrl.isNullOrEmpty()) return null
-        if (!videoUrl.contains("ashdi.vip")) return null
-        val url = if (videoUrl.contains("?")) videoUrl else "$videoUrl?player=animeon.club"
-        return try {
-            val html = app.get(url, headers = mapOf(
-                "User-Agent" to userAgent,
-                "Referer" to "$mainUrl/"
-            )).text
-            val posterRegex = Regex("""poster:\s*["'](https?://[^"']+)["']""")
-            val match = posterRegex.find(html)?.groupValues?.get(1) ?: return null
-            "https://" + match.removePrefix("http://").removePrefix("https://")
-        } catch (e: Exception) { null }
+    if (videoUrl.isNullOrEmpty()) return null
+    if (!videoUrl.contains("ashdi.vip")) return null
+    val url = if (videoUrl.contains("?")) videoUrl else "$videoUrl?player=animeon.club"
+    return try {
+        val html = app.get(url, headers = mapOf(
+            "User-Agent" to userAgent,
+            "Referer" to "$mainUrl/"
+        )).text
+        // Шукаємо poster:"http://..." або poster:'http://...'
+        val posterRegex = Regex("""poster:\s*["'](https?://[^"']+)["']""")
+        val match = posterRegex.find(html)?.groupValues?.get(1) ?: return null
+        // Завжди повертаємо https://
+        "https://" + match.removePrefix("http://").removePrefix("https://")
+    } catch (e: Exception) { null }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -168,6 +171,8 @@ class AnimeONProvider : MainAPI() {
 
                         for (ep in collected) {
                             if (seenEpisodes.add(ep.episode)) {
+                                // Якщо poster є — використовуємо його,
+                                // інакше парсимо screen.jpg з ashdi плеєра
                                 val posterUrl = if (!ep.poster.isNullOrEmpty()) {
                                     ep.poster
                                 } else {
@@ -244,6 +249,7 @@ class AnimeONProvider : MainAPI() {
             val translationId = item.translation.id
             for (player in item.player) {
 
+                // Отримуємо videoUrl через ep.id напряму
                 val realVideoUrl = if (episodeId != null) {
                     try {
                         val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode")
@@ -253,21 +259,22 @@ class AnimeONProvider : MainAPI() {
                     } catch (e: Exception) { null }
                 } else null
 
-                // Виправлено: повний перебір всіх сторінок замість одного offset
+                // Шукаємо епізод через пагінацію для fileUrl
                 var episode: FundubEpisode? = null
-                for (offset in 0..5000 step 100) {
+                val startOffset = maxOf(0, ((targetEpisode - 1) / 100) * 100)
+                for (offset in startOffset..startOffset + 100 step 100) {
                     val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
-                    val epJson = fetchJsonOrNull(epUrl) ?: break
+                    val epJson = fetchJsonOrNull(epUrl) ?: continue
                     val parsed = try {
                         Gson().fromJson(epJson, PlayerEpisodes::class.java)
-                    } catch (e: Exception) { null } ?: break
+                    } catch (e: Exception) { null } ?: continue
                     val eps = parsed.episodes ?: emptyList()
                     if (eps.isEmpty()) break
                     episode = eps.firstOrNull { it.episode == targetEpisode }
                     if (episode != null) break
-                    if (eps.size < 100) break
                 }
 
+                // Ashdi — fileUrl напряму
                 val fileUrl = episode?.fileUrl
                 if (!fileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
@@ -278,6 +285,7 @@ class AnimeONProvider : MainAPI() {
                     break
                 }
 
+                // Moon
                 val videoUrl = realVideoUrl ?: episode?.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
                     if (videoUrl.contains("m3u8")) {
