@@ -49,52 +49,12 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
-    // Парсить постер з ashdi або moon плеєра по videoUrl епізода
-    private suspend fun getPosterFromVideoUrl(videoUrl: String?): String? {
-        if (videoUrl.isNullOrEmpty()) return null
-        return when {
-            videoUrl.contains("ashdi.vip") -> getAshdiPoster(videoUrl)
-            videoUrl.contains("moonanime.art") -> getMoonPoster(videoUrl)
-            else -> null
-        }
-    }
-
-    // Отримує постер з ashdi плеєра
-    // Приклад: https://ashdi.vip/vod/232180?player=animeon.club
-    // Постер знаходиться в <meta property="og:image"> або через screen.jpg посилання в HTML
-    private suspend fun getAshdiPoster(iframeUrl: String): String? {
-        return try {
-            val html = app.get(iframeUrl, headers = mapOf(
-                "User-Agent" to userAgent,
-                "Referer" to "$mainUrl/"
-            )).text
-
-            // Шукаємо screen.jpg посилання — формат: jk29ocmjeoyql3tj.ashdi.vip/content/stream/.../screen.jpg
-            val screenRegex = Regex("""https?://[^"'\s]+screen\.jpg""")
-            val screenMatch = screenRegex.find(html)?.value
-            if (screenMatch != null) return "https://" + screenMatch.removePrefix("http://").removePrefix("https://")
-
-            // Fallback: og:image мета-тег
-            val ogImageRegex = Regex("""<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']""")
-            val ogMatch = ogImageRegex.find(html)?.groupValues?.get(1)
-            if (!ogMatch.isNullOrEmpty()) return ogMatch
-
-            // Fallback: poster= параметр в JavaScript
-            val posterJsRegex = Regex("""poster['":\s]+["'](https?://[^"']+\.(?:jpg|jpeg|png|webp))""")
-            posterJsRegex.find(html)?.groupValues?.get(1)
-        } catch (e: Exception) { null }
-    }
-
-    // Отримує постер з moon плеєра (якщо є в HTML)
-    private suspend fun getMoonPoster(iframeUrl: String): String? {
-        return try {
-            val html = app.get(iframeUrl, headers = mapOf(
-                "User-Agent" to userAgent,
-                "Referer" to "$mainUrl/"
-            )).text
-            val posterRegex = Regex("""poster['":\s]+["'](https?://[^"']+\.(?:jpg|jpeg|png|webp))""")
-            posterRegex.find(html)?.groupValues?.get(1)
-        } catch (e: Exception) { null }
+    // Конвертує fileUrl ashdi → постер без HTTP запиту
+    // https://ashdi.vip/video22/.../hls/TOKEN/index.m3u8 → https://ashdi.vip/video22/.../screen.jpg
+    private fun getAshdiPosterFromFileUrl(fileUrl: String?): String? {
+        if (fileUrl.isNullOrEmpty()) return null
+        if (!fileUrl.contains("/hls/")) return null
+        return fileUrl.substringBefore("/hls/") + "/screen.jpg"
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -201,19 +161,12 @@ class AnimeONProvider : MainAPI() {
 
                         for (ep in collected) {
                             if (seenEpisodes.add(ep.episode)) {
-                                // Отримуємо постер: спочатку з episodes API,
-                                // якщо порожній — парсимо з плеєра через episode API
+                                // Якщо poster є — використовуємо його,
+                                // інакше генеруємо з fileUrl без HTTP запиту
                                 val posterUrl = if (!ep.poster.isNullOrEmpty()) {
                                     ep.poster
                                 } else {
-                                    // Отримуємо videoUrl через ep.id щоб знайти постер
-                                    val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/${ep.id}/episode")
-                                    val videoUrl = if (epDetailJson != null) {
-                                        try {
-                                            Gson().fromJson(epDetailJson, FundubEpisode::class.java).videoUrl
-                                        } catch (e: Exception) { null }
-                                    } else null
-                                    getPosterFromVideoUrl(videoUrl)
+                                    getAshdiPosterFromFileUrl(ep.fileUrl)
                                 }
 
                                 episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
