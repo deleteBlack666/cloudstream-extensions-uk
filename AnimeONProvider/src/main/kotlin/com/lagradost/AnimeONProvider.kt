@@ -132,6 +132,7 @@ class AnimeONProvider : MainAPI() {
             }
         }
     } catch (e: Exception) { emptyList() }
+    
 }
 
 override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
