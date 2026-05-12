@@ -2,16 +2,15 @@ package com.lagradost.models
 
 import com.google.gson.annotations.SerializedName
 
-data class SearchModel (
-    @SerializedName("results") val results : List<AnimeSearchResult>,
-    @SerializedName("totalCount") val totalCount : Int? = null
+class SearchModel (
+
+    @SerializedName("result") val result : List<Result>,
 )
 
-data class AnimeSearchResult (
+data class Result (
+
     @SerializedName("titleUa") val titleUa : String,
     @SerializedName("id") val id : Int,
-    @SerializedName("image") val image : Image, // Клас Image вже має бути в іншому файлі
-    @SerializedName("episodes") val episodes : Int? = null,
-    @SerializedName("episodesAired") val episodesAired : Int? = null,
-    @SerializedName("type") val type : String? = null
+    @SerializedName("image") val image : Image,
+    @SerializedName("episodes") val episodes : Int,
 )
