@@ -51,18 +51,20 @@ class AnimeONProvider : MainAPI() {
 
     // Парсить screen.jpg з HTML сторінки ashdi плеєра
     private suspend fun getAshdiPoster(videoUrl: String?): String? {
-        if (videoUrl.isNullOrEmpty()) return null
-        if (!videoUrl.contains("ashdi.vip")) return null
-        val url = if (videoUrl.contains("?")) videoUrl else "$videoUrl?player=animeon.club"
-        return try {
-            val html = app.get(url, headers = mapOf(
-                "User-Agent" to userAgent,
-                "Referer" to "$mainUrl/"
-            )).text
-            val screenRegex = Regex("""https?://[^"'\s]+screen\.jpg""")
-            val match = screenRegex.find(html)?.value ?: return null
-            "https://" + match.removePrefix("http://").removePrefix("https://")
-        } catch (e: Exception) { null }
+    if (videoUrl.isNullOrEmpty()) return null
+    if (!videoUrl.contains("ashdi.vip")) return null
+    val url = if (videoUrl.contains("?")) videoUrl else "$videoUrl?player=animeon.club"
+    return try {
+        val html = app.get(url, headers = mapOf(
+            "User-Agent" to userAgent,
+            "Referer" to "$mainUrl/"
+        )).text
+        // Шукаємо poster:"http://..." або poster:'http://...'
+        val posterRegex = Regex("""poster:\s*["'](https?://[^"']+)["']""")
+        val match = posterRegex.find(html)?.groupValues?.get(1) ?: return null
+        // Завжди повертаємо https://
+        "https://" + match.removePrefix("http://").removePrefix("https://")
+    } catch (e: Exception) { null }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -149,45 +151,37 @@ class AnimeONProvider : MainAPI() {
         if (translationsJson != null) {
             try {
                 val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
+
+                // episodeNumber -> posterUrl (готовий постер)
+                val episodePosterMap = mutableMapOf<Int, String>()
+                // episodeNumber -> ashdi videoUrl (для парсингу якщо немає постера)
+                val episodeAshdiVideoMap = mutableMapOf<Int, String>()
+                // episodeNumber -> FundubEpisode (перший знайдений для data/id)
+                val collectedEpisodes = mutableMapOf<Int, FundubEpisode>()
                 val seenEpisodes = mutableSetOf<Int>()
-                for (translation in translations) {
-                    val translationId = translation.translation.id
-                    for (player in translation.player) {
-                        val collected = mutableListOf<FundubEpisode>()
 
-                        for (offset in 0..5000 step 100) {
-                            val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
-                            val epJson = fetchJsonOrNull(epUrl) ?: break
-                            val eps = try {
-                                Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
-                            } catch (e: Exception) { null }
+                
 
-                            if (eps.isNullOrEmpty()) break
-                            collected.addAll(eps)
-                            if (eps.size < 100) break
-                        }
-
-                        for (ep in collected) {
-                            if (seenEpisodes.add(ep.episode)) {
-                                // Якщо poster є — використовуємо його,
-                                // інакше парсимо screen.jpg з ashdi плеєра
-                                val posterUrl = if (!ep.poster.isNullOrEmpty()) {
-                                    ep.poster
-                                } else {
-                                    getAshdiPoster(ep.videoUrl)
-                                }
-
-                                episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
-                                    this.name = "Епізод ${ep.episode}"
-                                    this.posterUrl = posterUrl
-                                    this.episode = ep.episode
-                                    this.data = "$animeId, ${ep.episode}, ${ep.id}"
-                                })
-                            }
+                // Парсимо постери з ashdi тільки для тих епізодів де немає постера
+                for ((epNum, videoUrl) in episodeAshdiVideoMap) {
+                    if (!episodePosterMap.containsKey(epNum)) {
+                        val poster = getAshdiPoster(videoUrl)
+                        if (poster != null) {
+                            episodePosterMap[epNum] = poster
                         }
                     }
                 }
-                episodes.sortBy { it.episode }
+
+                // Формуємо фінальний список епізодів
+                for ((epNum, ep) in collectedEpisodes.entries.sortedBy { it.key }) {
+                    episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
+                        this.name = "Епізод ${ep.episode}"
+                        this.posterUrl = episodePosterMap[epNum]
+                        this.episode = ep.episode
+                        this.data = "$animeId, ${ep.episode}, ${ep.id}"
+                    })
+                }
+
             } catch (e: Exception) { }
         }
 
@@ -391,4 +385,4 @@ class AnimeONProvider : MainAPI() {
         if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
         return value.value.toIntOrNull()
     }
-} 
+}
