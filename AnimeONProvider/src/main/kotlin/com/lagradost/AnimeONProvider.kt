@@ -49,12 +49,20 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
-    // Конвертує fileUrl ashdi → постер без HTTP запиту
-    // https://ashdi.vip/video22/.../hls/TOKEN/index.m3u8 → https://ashdi.vip/video22/.../screen.jpg
-    private fun getAshdiPosterFromFileUrl(fileUrl: String?): String? {
-        if (fileUrl.isNullOrEmpty()) return null
-        if (!fileUrl.contains("/hls/")) return null
-        return fileUrl.substringBefore("/hls/") + "/screen.jpg"
+    // Парсить screen.jpg з HTML сторінки ashdi плеєра
+    private suspend fun getAshdiPoster(videoUrl: String?): String? {
+        if (videoUrl.isNullOrEmpty()) return null
+        if (!videoUrl.contains("ashdi.vip")) return null
+        val url = if (videoUrl.contains("?")) videoUrl else "$videoUrl?player=animeon.club"
+        return try {
+            val html = app.get(url, headers = mapOf(
+                "User-Agent" to userAgent,
+                "Referer" to "$mainUrl/"
+            )).text
+            val screenRegex = Regex("""https?://[^"'\s]+screen\.jpg""")
+            val match = screenRegex.find(html)?.value ?: return null
+            "https://" + match.removePrefix("http://").removePrefix("https://")
+        } catch (e: Exception) { null }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -162,11 +170,11 @@ class AnimeONProvider : MainAPI() {
                         for (ep in collected) {
                             if (seenEpisodes.add(ep.episode)) {
                                 // Якщо poster є — використовуємо його,
-                                // інакше генеруємо з fileUrl без HTTP запиту
+                                // інакше парсимо screen.jpg з ashdi плеєра
                                 val posterUrl = if (!ep.poster.isNullOrEmpty()) {
                                     ep.poster
                                 } else {
-                                    getAshdiPosterFromFileUrl(ep.fileUrl)
+                                    getAshdiPoster(ep.videoUrl)
                                 }
 
                                 episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
