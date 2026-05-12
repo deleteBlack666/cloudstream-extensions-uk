@@ -51,20 +51,18 @@ class AnimeONProvider : MainAPI() {
 
     // Парсить screen.jpg з HTML сторінки ashdi плеєра
     private suspend fun getAshdiPoster(videoUrl: String?): String? {
-    if (videoUrl.isNullOrEmpty()) return null
-    if (!videoUrl.contains("ashdi.vip")) return null
-    val url = if (videoUrl.contains("?")) videoUrl else "$videoUrl?player=animeon.club"
-    return try {
-        val html = app.get(url, headers = mapOf(
-            "User-Agent" to userAgent,
-            "Referer" to "$mainUrl/"
-        )).text
-        // Шукаємо poster:"http://..." або poster:'http://...'
-        val posterRegex = Regex("""poster:\s*["'](https?://[^"']+)["']""")
-        val match = posterRegex.find(html)?.groupValues?.get(1) ?: return null
-        // Завжди повертаємо https://
-        "https://" + match.removePrefix("http://").removePrefix("https://")
-    } catch (e: Exception) { null }
+        if (videoUrl.isNullOrEmpty()) return null
+        if (!videoUrl.contains("ashdi.vip")) return null
+        val url = if (videoUrl.contains("?")) videoUrl else "$videoUrl?player=animeon.club"
+        return try {
+            val html = app.get(url, headers = mapOf(
+                "User-Agent" to userAgent,
+                "Referer" to "$mainUrl/"
+            )).text
+            val screenRegex = Regex("""https?://[^"'\s]+screen\.jpg""")
+            val match = screenRegex.find(html)?.value ?: return null
+            "https://" + match.removePrefix("http://").removePrefix("https://")
+        } catch (e: Exception) { null }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -152,18 +150,20 @@ class AnimeONProvider : MainAPI() {
             try {
                 val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
 
-                // episodeNumber -> posterUrl (готовий постер)
+                // Збираємо постери окремо: episodeNumber -> posterUrl
+                // Пріоритет: якщо poster вже є в API — використовуємо одразу,
+                // інакше запам'ятовуємо videoUrl для ashdi щоб парсити пізніше
                 val episodePosterMap = mutableMapOf<Int, String>()
-                // episodeNumber -> ashdi videoUrl (для парсингу якщо немає постера)
-                val episodeAshdiVideoMap = mutableMapOf<Int, String>()
-                // episodeNumber -> FundubEpisode (перший знайдений для data/id)
-                val collectedEpisodes = mutableMapOf<Int, FundubEpisode>()
+                val episodeAshdiVideoMap = mutableMapOf<Int, String>() // для fallback
+
                 val seenEpisodes = mutableSetOf<Int>()
+                val collectedEpisodes = mutableMapOf<Int, FundubEpisode>()
 
                 for (translation in translations) {
                     val translationId = translation.translation.id
 
                     // Moon першим — там poster вже є в API відповіді
+                    // Ashdi другим — там потрібно парсити HTML
                     val sortedPlayers = translation.player.sortedByDescending {
                         it.name.lowercase() == "moon"
                     }
@@ -184,7 +184,12 @@ class AnimeONProvider : MainAPI() {
                         }
 
                         for (ep in collected) {
-                            // Постери збираємо для ВСІХ епізодів незалежно від seenEpisodes
+                            // Зберігаємо перший знайдений епізод для data/id
+                            if (seenEpisodes.add(ep.episode)) {
+                                collectedEpisodes[ep.episode] = ep
+                            }
+
+                            // Постер: пріоритет — перший непорожній
                             if (!episodePosterMap.containsKey(ep.episode)) {
                                 if (!ep.poster.isNullOrEmpty()) {
                                     // Є готовий постер (Moon зазвичай)
@@ -193,11 +198,6 @@ class AnimeONProvider : MainAPI() {
                                     // Запам'ятовуємо ashdi videoUrl для парсингу
                                     episodeAshdiVideoMap[ep.episode] = ep.videoUrl
                                 }
-                            }
-
-                            // Епізод в список — тільки перший раз
-                            if (seenEpisodes.add(ep.episode)) {
-                                collectedEpisodes[ep.episode] = ep
                             }
                         }
                     }
