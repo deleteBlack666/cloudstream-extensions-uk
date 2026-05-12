@@ -59,12 +59,11 @@ class AnimeONProvider : MainAPI() {
             "User-Agent" to userAgent,
             "Referer" to "$mainUrl/"
         )).text
-        // Ловимо всі варіанти: https://, http://, //
-        val screenRegex = Regex("""(?:https?:)?//[^"'\s]+screen\.jpg""")
-        val match = screenRegex.find(html)?.value ?: return null
+        // Шукаємо poster:"http://..." або poster:'http://...'
+        val posterRegex = Regex("""poster:\s*["'](https?://[^"']+)["']""")
+        val match = posterRegex.find(html)?.groupValues?.get(1) ?: return null
         // Завжди повертаємо https://
-        if (match.startsWith("//")) "https:$match"
-        else "https://" + match.removePrefix("http://").removePrefix("https://")
+        "https://" + match.removePrefix("http://").removePrefix("https://")
     } catch (e: Exception) { null }
     }
 
