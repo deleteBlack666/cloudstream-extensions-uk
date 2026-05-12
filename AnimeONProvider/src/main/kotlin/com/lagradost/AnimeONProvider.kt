@@ -118,17 +118,28 @@ class AnimeONProvider : MainAPI() {
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
-    override suspend fun search(query: String): List<SearchResponse> {
-        val jsonText = fetchJsonOrNull(searchApi + query) ?: return emptyList()
-        return try {
-            Gson().fromJson(jsonText, SearchModel::class.java).result.map {
-                newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
-                    this.posterUrl = posterApi.format(it.image.preview)
-                    addDubStatus(isDub = true, it.episodes)
-                }
+override suspend fun search(query: String): List<SearchResponse> {
+    val jsonText = fetchJsonOrNull(searchApi + query) ?: return emptyList()
+    return try {
+        // Змінюємо .result на .results
+        Gson().fromJson(jsonText, SearchModel::class.java).results.map {
+            val tvType = when (it.type) {
+                "movie" -> TvType.AnimeMovie
+                "special", "ova", "ona" -> TvType.OVA
+                else -> TvType.Anime
             }
-        } catch (e: Exception) { emptyList() }
+
+            newAnimeSearchResponse(it.titleUa, "anime/${it.id}", tvType) {
+                this.posterUrl = posterApi.format(it.image.preview)
+                // Використовуємо aired серії, якщо вони є, інакше загальну кількість
+                addDubStatus(isDub = true, it.episodesAired ?: it.episodes ?: 0)
+            }
+        }
+    } catch (e: Exception) { 
+        emptyList() 
     }
+}
+
 
     override suspend fun load(url: String): LoadResponse {
         val animeId = url.substringAfterLast("/").substringBefore("-").toInt()
