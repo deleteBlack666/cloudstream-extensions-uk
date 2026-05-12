@@ -119,33 +119,36 @@ class AnimeONProvider : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val jsonText = fetchJsonOrNull(searchApi + query) ?: return emptyList()
-        return try {
-            Gson().fromJson(jsonText, SearchModel::class.java).result.map {
-                newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
-                    this.posterUrl = posterApi.format(it.image.preview)
-                    addDubStatus(isDub = true, it.episodes)
-                }
-            }
-        } catch (e: Exception) { emptyList() }
-    }
-
-    override suspend fun load(url: String): LoadResponse {
-        val animeId = url.substringAfterLast("/").substringBefore("-").toInt()
-        val jsonText = fetchJsonOrNull("$apiUrl/$animeId")
-            ?: throw Exception("Failed to load")
-        val animeJSON = Gson().fromJson(jsonText, AnimeInfoModel::class.java)
-
-        val showStatus = if (animeJSON.status.contains("ongoing")) ShowStatus.Ongoing else ShowStatus.Completed
-        val tvType = with(animeJSON.type) {
-            when {
-                contains("tv") -> TvType.Anime
-                contains("OVA") || contains("ONA") || contains("Спеціальний випуск") -> TvType.OVA
-                contains("movie") -> TvType.AnimeMovie
+    // Формуємо посилання
+    val url = searchApi + query
+    val jsonText = fetchJsonOrNull(url) ?: return emptyList()
+    
+    return try {
+        // 1. Парсимо в нову SearchModel
+        val parsed = Gson().fromJson(jsonText, SearchModel::class.java)
+        
+        // 2. Звертаємось до .results (у старій моделі було .result без 's')
+        parsed.results.map {
+            // Визначаємо тип контенту
+            val tvType = when (it.type?.lowercase()) {
+                "movie" -> TvType.AnimeMovie
+                "special", "ova", "ona" -> TvType.OVA
                 else -> TvType.Anime
             }
-        }
 
+            // 3. Формуємо відповідь (використовуємо імена полів з твоєї моделі)
+            newAnimeSearchResponse(it.titleUa, "anime/${it.id}", tvType) {
+                this.posterUrl = posterApi.format(it.image.preview)
+                // Додаємо статус серій (використовуємо episodesAired, якщо є, інакше просто episodes)
+                addDubStatus(isDub = true, it.episodesAired ?: it.episodes ?: 0)
+            }
+        }
+    } catch (e: Exception) {
+        // Якщо сталася помилка парсингу, повертаємо порожній список
+        emptyList()
+    }
+}
+    
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
         val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
         if (translationsJson != null) {
