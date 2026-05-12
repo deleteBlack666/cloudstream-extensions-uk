@@ -27,7 +27,6 @@ class AnimeONProvider : MainAPI() {
 
     private val apiUrl = "$mainUrl/api/anime"
     private val posterApi = "$mainUrl/api/uploads/images/%s"
-    private val searchApi = "$apiUrl/search?text="
     private val userAgent = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
 
     override val mainPage = mainPageOf(
@@ -47,28 +46,24 @@ class AnimeONProvider : MainAPI() {
             if (!response.trimStart().startsWith("{") && !response.trimStart().startsWith("[")) null
             else response
         } catch (e: Exception) { null }
-    )
+    }
 
-    // Парсить screen.jpg з HTML сторінки ashdi плеєра
     private suspend fun getAshdiPoster(videoUrl: String?): String? {
-    if (videoUrl.isNullOrEmpty()) return null
-    if (!videoUrl.contains("ashdi.vip")) return null
-    val url = if (videoUrl.contains("?")) videoUrl else "$videoUrl?player=animeon.club"
-    return try {
-        val html = app.get(url, headers = mapOf(
-            "User-Agent" to userAgent,
-            "Referer" to "$mainUrl/"
-        )).text
-        // Шукаємо poster:"http://..." або poster:'http://...'
-        val posterRegex = Regex("""poster:\s*["'](https?://[^"']+)["']""")
-        val match = posterRegex.find(html)?.groupValues?.get(1) ?: return null
-        // Завжди повертаємо https://
-        "https://" + match.removePrefix("http://").removePrefix("https://")
-    } catch (e: Exception) { null }
+        if (videoUrl.isNullOrEmpty()) return null
+        if (!videoUrl.contains("ashdi.vip")) return null
+        val url = if (videoUrl.contains("?")) videoUrl else "$videoUrl?player=animeon.club"
+        return try {
+            val html = app.get(url, headers = mapOf(
+                "User-Agent" to userAgent,
+                "Referer" to "$mainUrl/"
+            )).text
+            val posterRegex = Regex("""poster:\s*["'](https?://[^"']+)["']""")
+            val match = posterRegex.find(html)?.groupValues?.get(1) ?: return null
+            "https://" + match.removePrefix("http://").removePrefix("https://")
+        } catch (e: Exception) { null }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-
         if (request.name == "Популярні аніме") {
             if (page != 1) return newHomePageResponse(request.name, emptyList())
 
@@ -91,7 +86,7 @@ class AnimeONProvider : MainAPI() {
         }
 
         if (request.data.contains("seasons") && page != 1) {
-            return newHomePageResponse(emptyList())
+            return newHomePageResponse(request.name, emptyList())
         }
 
         val jsonText = fetchJsonOrNull(
@@ -116,26 +111,19 @@ class AnimeONProvider : MainAPI() {
         }
     }
 
-    override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
-
     override suspend fun search(query: String): List<SearchResponse> {
-        val jsonText = fetchJsonOrNull(searchApi + query) ?: return emptyList()
+        val jsonText = fetchJsonOrNull("$apiUrl?pageSize=50&pageIndex=0&search=$query") ?: return emptyList()
         return try {
-            Gson().fromJson(jsonText, SearchModel::class.java).result.map {
-    override suspend fun search(query: String): List<SearchResponse> {
-    val jsonText = fetchJsonOrNull("$apiUrl?pageSize=50&pageIndex=0&search=$query") ?: return emptyList()
-    return try {
-        Gson().fromJson(jsonText, NewAnimeModel::class.java).results.map {
-            newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
-                this.posterUrl = posterApi.format(it.image.preview)
-                addDubStatus(isDub = true, it.episodes)
+            Gson().fromJson(jsonText, NewAnimeModel::class.java).results.map {
+                newAnimeSearchResponse(it.titleUa, "anime/${it.id}", TvType.Anime) {
+                    this.posterUrl = posterApi.format(it.image.preview)
+                    addDubStatus(isDub = true, it.episodes)
+                }
             }
-        }
-    } catch (e: Exception) { emptyList() }
-    
-}
+        } catch (e: Exception) { emptyList() }
+    }
 
-override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
+    override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse {
         val animeId = url.substringAfterLast("/").substringBefore("-").toInt()
@@ -178,8 +166,6 @@ override suspend fun quickSearch(query: String): List<SearchResponse> = search(q
 
                         for (ep in collected) {
                             if (seenEpisodes.add(ep.episode)) {
-                                // Якщо poster є — використовуємо його,
-                                // інакше парсимо screen.jpg з ashdi плеєра
                                 val posterUrl = if (!ep.poster.isNullOrEmpty()) {
                                     ep.poster
                                 } else {
@@ -255,8 +241,6 @@ override suspend fun quickSearch(query: String): List<SearchResponse> = search(q
         translations.forEach { item ->
             val translationId = item.translation.id
             for (player in item.player) {
-
-                // Отримуємо videoUrl через ep.id напряму
                 val realVideoUrl = if (episodeId != null) {
                     try {
                         val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode")
@@ -266,7 +250,6 @@ override suspend fun quickSearch(query: String): List<SearchResponse> = search(q
                     } catch (e: Exception) { null }
                 } else null
 
-                // Шукаємо епізод через пагінацію для fileUrl
                 var episode: FundubEpisode? = null
                 val startOffset = maxOf(0, ((targetEpisode - 1) / 100) * 100)
                 for (offset in startOffset..startOffset + 100 step 100) {
@@ -281,7 +264,6 @@ override suspend fun quickSearch(query: String): List<SearchResponse> = search(q
                     if (episode != null) break
                 }
 
-                // Ashdi — fileUrl напряму
                 val fileUrl = episode?.fileUrl
                 if (!fileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
@@ -292,7 +274,6 @@ override suspend fun quickSearch(query: String): List<SearchResponse> = search(q
                     break
                 }
 
-                // Moon
                 val videoUrl = realVideoUrl ?: episode?.videoUrl
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
                     if (videoUrl.contains("m3u8")) {
@@ -317,8 +298,6 @@ override suspend fun quickSearch(query: String): List<SearchResponse> = search(q
                                     referer = "https://moonanime.art/",
                                     headers = mapOf(
                                         "User-Agent" to userAgent,
-                                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                                        "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
                                         "Referer" to "https://animeon.club/"
                                     )
                                 ).dropLast(1).forEach(callback)
@@ -330,8 +309,6 @@ override suspend fun quickSearch(query: String): List<SearchResponse> = search(q
                                 referer = "https://moonanime.art/",
                                 headers = mapOf(
                                     "User-Agent" to userAgent,
-                                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                                    "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
                                     "Referer" to "https://animeon.club/"
                                 )
                             ).dropLast(1).forEach(callback)
@@ -341,7 +318,6 @@ override suspend fun quickSearch(query: String): List<SearchResponse> = search(q
                 }
             }
         }
-
         return true
     }
 
@@ -373,8 +349,6 @@ override suspend fun quickSearch(query: String): List<SearchResponse> = search(q
     private suspend fun getMoonFile(iframeUrl: String): String {
         val html = app.get(iframeUrl, headers = mapOf(
             "User-Agent" to userAgent,
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
             "Referer" to "https://animeon.club/"
         )).text
 
