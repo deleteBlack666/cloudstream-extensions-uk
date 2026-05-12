@@ -146,28 +146,19 @@ class AnimeONProvider : MainAPI() {
             }
         }
 
-        val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
-        val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
-        if (translationsJson != null) {
-            try {
-                val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
-                val seenEpisodes = mutableSetOf<Int>()
-                for (translation in translations) {
-                    val translationId = translation.translation.id
-                    for (player in translation.player) {
-                        val collected = mutableListOf<FundubEpisode>()
-
-                        for (offset in 0..5000 step 100) {
-                            val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
-                            val epJson = fetchJsonOrNull(epUrl) ?: break
-                            val eps = try {
-                                Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
-                            } catch (e: Exception) { null }
-
-                            if (eps.isNullOrEmpty()) break
-                            collected.addAll(eps)
-                            if (eps.size < 100) break
-                        }
+var episode: FundubEpisode? = null
+for (offset in 0..5000 step 100) {
+    val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
+    val epJson = fetchJsonOrNull(epUrl) ?: break
+    val parsed = try {
+        Gson().fromJson(epJson, PlayerEpisodes::class.java)
+    } catch (e: Exception) { null } ?: break
+    val eps = parsed.episodes ?: emptyList()
+    if (eps.isEmpty()) break
+    episode = eps.firstOrNull { it.episode == targetEpisode }
+    if (episode != null) break
+    if (eps.size < 100) break
+}
 
                         for (ep in collected) {
                             if (seenEpisodes.add(ep.episode)) {
