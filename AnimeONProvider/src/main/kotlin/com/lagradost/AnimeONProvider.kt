@@ -81,9 +81,9 @@ class AnimeONProvider : MainAPI() {
             val ashdiFile = fileRegex.find(html)?.groupValues?.get(1) ?: return
             
             val links = M3u8Helper.generateM3u8(
-                source = sourceName,
-                streamUrl = ashdiFile,
-                referer = "https://ashdi.vip"
+                sourceName,
+                ashdiFile,
+                "https://ashdi.vip"
             )
             
             if (links.isNotEmpty()) {
@@ -91,12 +91,12 @@ class AnimeONProvider : MainAPI() {
             } else {
                 callback(
                     newExtractorLink(
-                        source = sourceName,
-                        name = sourceName,
-                        url = ashdiFile,
-                        referer = "https://ashdi.vip",
-                        quality = Qualities.Unknown.value,
-                        isM3u8 = true
+                        sourceName,
+                        sourceName,
+                        ashdiFile,
+                        "https://ashdi.vip",
+                        Qualities.Unknown.value,
+                        true
                     )
                 )
             }
@@ -297,21 +297,21 @@ class AnimeONProvider : MainAPI() {
 
         if (!epData.fileUrl.isNullOrEmpty()) {
             val links = M3u8Helper.generateM3u8(
-                source = sourceName,
-                streamUrl = epData.fileUrl!!,
-                referer = "https://ashdi.vip"
+                sourceName,
+                epData.fileUrl!!,
+                "https://ashdi.vip"
             )
             if (links.isNotEmpty()) {
                 (if (links.size > 1) links.dropLast(1) else links).forEach(callback)
             } else {
                 callback(
                     newExtractorLink(
-                        source = sourceName,
-                        name = sourceName,
-                        url = epData.fileUrl!!,
-                        referer = "https://ashdi.vip",
-                        quality = Qualities.Unknown.value,
-                        isM3u8 = true
+                        sourceName,
+                        sourceName,
+                        epData.fileUrl!!,
+                        "https://ashdi.vip",
+                        Qualities.Unknown.value,
+                        true
                     )
                 )
             }
@@ -327,9 +327,9 @@ class AnimeONProvider : MainAPI() {
             videoUrl.contains("moonanime.art") -> {
                 if (videoUrl.contains("m3u8")) {
                     M3u8Helper.generateM3u8(
-                        source = sourceName,
-                        streamUrl = videoUrl,
-                        referer = "https://moonanime.art/"
+                        sourceName,
+                        videoUrl,
+                        "https://moonanime.art/"
                     ).dropLast(1).forEach(callback)
                     return true
                 }
@@ -341,9 +341,9 @@ class AnimeONProvider : MainAPI() {
                             val quality = match.groupValues[1]
                             val url = match.groupValues[2]
                             M3u8Helper.generateM3u8(
-                                source = "$sourceName $quality",
-                                streamUrl = url,
-                                referer = "https://moonanime.art/",
+                                "$sourceName $quality",
+                                url,
+                                "https://moonanime.art/",
                                 headers = mapOf(
                                     "User-Agent" to userAgent,
                                     "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -354,9 +354,9 @@ class AnimeONProvider : MainAPI() {
                         }
                     } else if (rawFile.contains(".m3u8")) {
                         M3u8Helper.generateM3u8(
-                            source = sourceName,
-                            streamUrl = rawFile,
-                            referer = "https://moonanime.art/",
+                            sourceName,
+                            rawFile,
+                            "https://moonanime.art/",
                             headers = mapOf(
                                 "User-Agent" to userAgent,
                                 "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
