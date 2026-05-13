@@ -80,7 +80,6 @@ class AnimeONProvider : MainAPI() {
             val fileRegex = Regex("""file\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""")
             val ashdiFile = fileRegex.find(html)?.groupValues?.get(1) ?: return
             
-            // Використовуємо спрощену версію створення посилань
             val links = M3u8Helper.generateM3u8(
                 sourceName,
                 ashdiFile,
@@ -91,10 +90,14 @@ class AnimeONProvider : MainAPI() {
                 (if (links.size > 1) links.dropLast(1) else links).forEach(callback)
             } else {
                 callback(
-                    newExtractorLink(sourceName, sourceName, ashdiFile) {
-                        this.referer = "https://ashdi.vip"
-                        this.isM3u8 = true
-                    }
+                    newExtractorLink(
+                        sourceName,
+                        sourceName,
+                        ashdiFile,
+                        referer = "https://ashdi.vip",
+                        quality = 0,
+                        isM3u8 = true
+                    )
                 )
             }
         } catch (e: Exception) { }
@@ -302,10 +305,14 @@ class AnimeONProvider : MainAPI() {
                 (if (links.size > 1) links.dropLast(1) else links).forEach(callback)
             } else {
                 callback(
-                    newExtractorLink(sourceName, sourceName, epData.fileUrl!!) {
-                        this.referer = "https://ashdi.vip"
-                        this.isM3u8 = true
-                    }
+                    newExtractorLink(
+                        sourceName,
+                        sourceName,
+                        epData.fileUrl!!,
+                        referer = "https://ashdi.vip",
+                        quality = 0,
+                        isM3u8 = true
+                    )
                 )
             }
             return true
