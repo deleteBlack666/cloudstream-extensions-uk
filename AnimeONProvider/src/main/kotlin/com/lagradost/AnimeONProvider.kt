@@ -314,31 +314,49 @@ class AnimeONProvider : MainAPI() {
                 }
 
                 val fileUrl = episode?.fileUrl
-if (!fileUrl.isNullOrEmpty()) {
-    callback(
-        newExtractorLink(
-            source = "${item.translation.name} (${player.name})",
-            name = "${item.translation.name} (${player.name})",
-            url = fileUrl,
-        ) {
-            this.referer = "https://ashdi.vip"
-            this.quality = Qualities.Unknown.value
-            this.isM3u8 = true
-        }
-    )
-    break
-}
+                if (!fileUrl.isNullOrEmpty()) {
+                    val links = M3u8Helper.generateM3u8(
+                        source = "${item.translation.name} (${player.name})",
+                        streamUrl = fileUrl,
+                        referer = "https://ashdi.vip"
+                    )
+                    if (links.isNotEmpty()) {
+                        (if (links.size > 1) links.dropLast(1) else links).forEach(callback)
+                    } else {
+                        callback(ExtractorLink(
+                            source = "${item.translation.name} (${player.name})",
+                            name = "${item.translation.name} (${player.name})",
+                            url = fileUrl,
+                            referer = "https://ashdi.vip",
+                            quality = -1,
+                            isM3u8 = true
+                        ))
+                    }
+                    break
+                }
 
                 val videoUrl = realVideoUrl ?: episode?.videoUrl
 
                 if (!videoUrl.isNullOrEmpty() && videoUrl.contains("ashdi.vip")) {
                     val ashdiFile = getAshdiFileUrl(videoUrl)
                     if (!ashdiFile.isNullOrEmpty()) {
-                        M3u8Helper.generateM3u8(
+                        val links = M3u8Helper.generateM3u8(
                             source = "${item.translation.name} (${player.name})",
                             streamUrl = ashdiFile,
                             referer = "https://ashdi.vip"
-                        ).dropLast(1).forEach(callback)
+                        )
+                        if (links.isNotEmpty()) {
+                            (if (links.size > 1) links.dropLast(1) else links).forEach(callback)
+                        } else {
+                            callback(ExtractorLink(
+                                source = "${item.translation.name} (${player.name})",
+                                name = "${item.translation.name} (${player.name})",
+                                url = ashdiFile,
+                                referer = "https://ashdi.vip",
+                                quality = -1,
+                                isM3u8 = true
+                            ))
+                        }
                         break
                     }
                 }
