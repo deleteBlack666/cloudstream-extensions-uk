@@ -282,19 +282,18 @@ class AnimeONProvider : MainAPI() {
 
                 
                 var episode: FundubEpisode? = null
-
-for (offset in listOf(-1) + (0..5000 step 100).toList()) {
-    val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
-    val epJson = fetchJsonOrNull(epUrl) ?: if (offset == -1) continue else break
-    val parsed = try {
-        Gson().fromJson(epJson, PlayerEpisodes::class.java)
-    } catch (e: Exception) { null } ?: if (offset == -1) continue else break
-    val eps = parsed.episodes ?: emptyList()
-    if (eps.isEmpty()) { if (offset == -1) continue else break }
-    episode = eps.firstOrNull { it.episode == targetEpisode }
-    if (episode != null) break
-    if (eps.size < 100) break
-}
+                for (offset in 0..5000 step 100) {
+                    val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
+                    val epJson = fetchJsonOrNull(epUrl) ?: break
+                    val parsed = try {
+                        Gson().fromJson(epJson, PlayerEpisodes::class.java)
+                    } catch (e: Exception) { null } ?: break
+                    val eps = parsed.episodes ?: emptyList()
+                    if (eps.isEmpty()) break
+                    episode = eps.firstOrNull { it.episode == targetEpisode }
+                    if (episode != null) break
+                    if (eps.size < 100) break
+                }
 
                 val fileUrl = episode?.fileUrl
                 if (!fileUrl.isNullOrEmpty()) {
