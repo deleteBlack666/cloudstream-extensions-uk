@@ -254,89 +254,97 @@ class AnimeONProvider : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(
+        override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val dataList = data.split(", ")
-        if (dataList.size < 2) return false
+        if (dataList.size < 3) return false
 
         val animeId = dataList[0]
         val targetEpisode = dataList[1].toIntOrNull() ?: return false
-        val episodeId = dataList.getOrNull(2)?.toIntOrNull()
+        val episodeId = dataList[2].toIntOrNull() ?: return false
 
-        // Отримуємо список перекладів
+        // 1. Спочатку спробуємо отримати дані конкретного епізоду за його ID
+        // Це той самий запит, що ви скинули: /api/player/31894/episode
+        val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode")
+        if (epDetailJson != null) {
+            val epData = try { Gson().fromJson(epDetailJson, FundubEpisode::class.java) } catch (e: Exception) { null }
+            
+            // Якщо в деталях епізоду вже є пряме посилання
+            if (!epData?.fileUrl.isNullOrEmpty()) {
+                extractM3u8(epData!!.fileUrl!!, "Ashdi Direct", "https://ashdi.vip/", callback)
+                return true
+            }
+            
+            // Якщо є тільки videoUrl (наприклад, ashdi.vip/vod/...)
+            if (!epData?.videoUrl.isNullOrEmpty()) {
+                if (epData!!.videoUrl!!.contains("ashdi.vip")) {
+                    // Витягуємо m3u8 прямо з HTML сторінки плеєра Ashdi
+                    processAshdiIframe(epData.videoUrl!!, callback)
+                }
+            }
+        }
+
+        // 2. Якщо прямий запит не дав результату, йдемо через переклад (як раніше, але з фіксом)
         val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations") ?: return false
         val translations = try {
             Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
         } catch (e: Exception) { return false }
 
         translations.forEach { item ->
-            val translationId = item.translation.id
             for (player in item.player) {
-                
-                // Отримуємо список епізодів для конкретного плеєра та перекладу
-                // Використовуємо skip=-1 для отримання повного списку, як у вашому прикладі
-                val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
+                // Використовуємо ваш лайфхак зі skip=-1
+                val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=-1&playerId=${player.id}&translationId=${item.translation.id}"
                 val epJson = fetchJsonOrNull(epUrl) ?: continue
-                val parsed = try {
-                    Gson().fromJson(epJson, PlayerEpisodes::class.java)
-                } catch (e: Exception) { null } ?: continue
+                val parsed = try { Gson().fromJson(epJson, PlayerEpisodes::class.java) } catch (e: Exception) { null }
                 
-                val eps = parsed.episodes ?: emptyList()
-                val episode = eps.firstOrNull { it.episode == targetEpisode } ?: continue
-
+                val episode = parsed?.episodes?.firstOrNull { it.episode == targetEpisode } ?: continue
                 val sourceName = "${item.translation.name} (${player.name})"
 
-                // 1. ПЕРЕВІРКА fileUrl (Пряме посилання на m3u8, актуально для Ashdi)
+                // Пріоритет 1: fileUrl (прямий m3u8 з вашого JSON)
                 if (!episode.fileUrl.isNullOrEmpty()) {
-                    M3u8Helper.generateM3u8(
-                        source = sourceName,
-                        streamUrl = episode.fileUrl,
-                        referer = "https://ashdi.vip/"
-                    ).forEach(callback)
-                    // Якщо знайшли пряме посилання, переходимо до наступного плеєра/перекладу
-                    continue 
-                }
-
-                // 2. ПЕРЕВІРКА videoUrl (Для MoonAnime або зовнішніх плеєрів)
-                val videoUrl = episode.videoUrl
-                if (!videoUrl.isNullOrEmpty()) {
-                    if (videoUrl.contains("moonanime.art")) {
-                        val rawFile = getMoonFile(videoUrl)
-                        if (rawFile.isNotEmpty()) {
-                            if (rawFile.startsWith("[")) {
-                                val qualityRegex = Regex("""\[(\d+p)\](https?://[^\s,]+)""")
-                                qualityRegex.findAll(rawFile).forEach { match ->
-                                    val quality = match.groupValues[1]
-                                    val url = match.groupValues[2]
-                                    M3u8Helper.generateM3u8(
-                                        source = "$sourceName $quality",
-                                        streamUrl = url,
-                                        referer = "https://moonanime.art/"
-                                    ).forEach(callback)
-                                }
-                            } else {
-                                M3u8Helper.generateM3u8(
-                                    source = sourceName,
-                                    streamUrl = rawFile,
-                                    referer = "https://moonanime.art/"
-                                ).forEach(callback)
-                            }
-                        }
-                    } else if (videoUrl.contains("ashdi.vip")) {
-                        // Якщо fileUrl був порожній, але є videoUrl від ashdi
-                        val posterAndLinks = getAshdiPoster(videoUrl) // В цій функції можна додати логіку витягування лінків, якщо треба
+                    extractM3u8(episode.fileUrl!!, sourceName, "https://ashdi.vip/", callback)
+                } 
+                // Пріоритет 2: videoUrl (якщо це MoonAnime)
+                else if (!episode.videoUrl.isNullOrEmpty() && episode.videoUrl!!.contains("moonanime")) {
+                    val moonFile = getMoonFile(episode.videoUrl!!)
+                    if (moonFile.isNotEmpty()) {
+                        extractM3u8(moonFile, sourceName, "https://moonanime.art/", callback)
                     }
                 }
             }
         }
-
         return true
     }
-    
+
+    // Допоміжна функція для додавання лінків
+    private fun extractM3u8(url: String, name: String, referer: String, callback: (ExtractorLink) -> Unit) {
+        M3u8Helper.generateM3u8(
+            source = name,
+            streamUrl = url,
+            referer = referer,
+            headers = mapOf("User-Agent" to userAgent)
+        ).forEach(callback)
+    }
+
+    // Нова функція для "витягування" посилання з самого плеєра Ashdi, якщо API дає тільки сторінку
+    private suspend fun processAshdiIframe(iframeUrl: String, callback: (ExtractorLink) -> Unit) {
+        try {
+            val url = if (iframeUrl.contains("?")) iframeUrl else "$iframeUrl?player=animeon.club"
+            val html = app.get(url, headers = mapOf("Referer" to "$mainUrl/")).text
+            
+            // Шукаємо посилання на m3u8 в скриптах плеєра
+            val fileRegex = Regex("""file\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""")
+            val match = fileRegex.find(html)?.groupValues?.get(1)
+            
+            if (match != null) {
+                extractM3u8(match, "Ashdi VOD", "https://ashdi.vip/", callback)
+            }
+        } catch (e: Exception) { }
+    }
 
     private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
         return try {
