@@ -56,14 +56,10 @@ class AnimeONProvider : MainAPI() {
     }
 
     private suspend fun getAshdiPoster(videoUrl: String?): String? {
-        if (videoUrl.isNullOrEmpty()) return null
-        if (!videoUrl.contains("ashdi.vip")) return null
+        if (videoUrl.isNullOrEmpty() || !videoUrl.contains("ashdi.vip")) return null
         val url = if (videoUrl.contains("?")) videoUrl else "$videoUrl?player=animeon.club"
         return try {
-            val html = app.get(url, headers = mapOf(
-                "User-Agent" to userAgent,
-                "Referer" to "$mainUrl/"
-            )).text
+            val html = app.get(url, headers = mapOf("User-Agent" to userAgent, "Referer" to "$mainUrl/")).text
             val posterRegex = Regex("""poster:\s*["'](https?://[^"']+)["']""")
             val match = posterRegex.find(html)?.groupValues?.get(1) ?: return null
             "https://" + match.removePrefix("http://").removePrefix("https://")
@@ -82,8 +78,6 @@ class AnimeONProvider : MainAPI() {
                 }
             })
         }
-
-        if (request.data.contains("seasons") && page != 1) return newHomePageResponse(emptyList())
 
         val jsonText = fetchJsonOrNull(if (request.data.contains("%d")) request.data.format(page) else request.data) ?: return newHomePageResponse(request.name, emptyList())
 
@@ -104,21 +98,15 @@ class AnimeONProvider : MainAPI() {
         }
     }
 
-    override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
-
     override suspend fun search(query: String): List<SearchResponse> {
         val id = query.toIntOrNull()
-        if (id != null) {
-            val animeById = searchById(id)
-            if (animeById != null) return listOf(animeById)
-        }
+        if (id != null) searchById(id)?.let { return listOf(it) }
         val jsonText = fetchJsonOrNull("$searchApi${query}") ?: return emptyList()
         return try {
             val response = Gson().fromJson(jsonText, SearchApiResponse::class.java)
             response?.results?.map { result ->
                 newAnimeSearchResponse(result.titleUa, "anime/${result.id}", TvType.Anime) {
                     this.posterUrl = posterApi.format(result.image.preview)
-                    addDubStatus(isDub = true, result.episodes)
                 }
             } ?: emptyList()
         } catch (e: Exception) { emptyList() }
@@ -129,22 +117,13 @@ class AnimeONProvider : MainAPI() {
         val anime = try { Gson().fromJson(jsonText, AnimeInfoModel::class.java) } catch (e: Exception) { null } ?: return null
         return newAnimeSearchResponse(anime.titleUa, "anime/${anime.id}", TvType.Anime) {
             this.posterUrl = posterApi.format(anime.image.preview)
-            addDubStatus(isDub = true, anime.episodes)
         }
     }
 
-        override suspend fun load(url: String): LoadResponse {
+    override suspend fun load(url: String): LoadResponse {
         val animeId = url.split("/").last { it.isNotEmpty() }.filter { it.isDigit() }.toInt()
         val jsonText = fetchJsonOrNull("$apiUrl/$animeId") ?: throw Exception("Failed to load")
         val animeJSON = Gson().fromJson(jsonText, AnimeInfoModel::class.java)
-
-        val showStatus = if (animeJSON.status.contains("ongoing")) ShowStatus.Ongoing else ShowStatus.Completed
-        val tvType = when {
-            animeJSON.type.contains("tv") -> TvType.Anime
-            animeJSON.type.contains("OVA") || animeJSON.type.contains("ONA") || animeJSON.type.contains("Спеціальний випуск") -> TvType.OVA
-            animeJSON.type.contains("movie") -> TvType.AnimeMovie
-            else -> TvType.Anime
-        }
 
         val episodes = mutableListOf<com.lagradost.cloudstream3.Episode>()
         val translationsJson = fetchJsonOrNull("$mainUrl/api/player/$animeId/translations")
@@ -158,7 +137,6 @@ class AnimeONProvider : MainAPI() {
                         val epJson = fetchJsonOrNull(epUrl) ?: continue
                         val eps = try { Gson().fromJson(epJson, PlayerEpisodes::class.java)?.episodes } catch (e: Exception) { null } ?: continue
 
-                        // ВИПРАВЛЕНО: Використовуємо цикл замість map, щоб працювали suspend функції
                         for (ep in eps) {
                             val poster = if (ep.poster.isNotEmpty()) ep.poster else getAshdiPoster(ep.videoUrl)
                             episodes.add(newEpisode("$animeId|${ep.id}") {
@@ -172,19 +150,13 @@ class AnimeONProvider : MainAPI() {
             } catch (e: Exception) { }
         }
 
-        return newAnimeLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType) {
+        return newAnimeLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", TvType.Anime) {
             this.posterUrl = posterApi.format(animeJSON.image.preview)
-            this.engName = animeJSON.titleEn
-            this.tags = animeJSON.genres.map { it.nameUa }
             this.plot = animeJSON.description
-            addTrailer(animeJSON.trailer)
-            this.showStatus = showStatus
-            this.duration = extractIntFromString(animeJSON.episodeTime)
             this.year = animeJSON.releaseDate.toIntOrNull()
-            this.score = Score.from10(animeJSON.rating)
             addEpisodes(DubStatus.Dubbed, episodes.sortedBy { it.episode })
             addMalId(animeJSON.malId.toIntOrNull())
-        }  
+        }
     }
 
     override suspend fun loadLinks(
@@ -194,7 +166,6 @@ class AnimeONProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val epId = data.split("|").last().toIntOrNull() ?: return false
-
         val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/$epId/episode") ?: return false
         val epData = try { Gson().fromJson(epDetailJson, FundubEpisode::class.java) } catch (e: Exception) { null } ?: return false
 
@@ -205,25 +176,20 @@ class AnimeONProvider : MainAPI() {
 
         if (!epData.videoUrl.isNullOrEmpty()) {
             val vUrl = epData.videoUrl!!
-            if (vUrl.contains("moonanime")) {
-                val moonFile = getMoonFile(vUrl)
-                if (moonFile.isNotEmpty()) extractM3u8(moonFile, "MoonAnime", "https://moonanime.art/", callback)
-            } else if (vUrl.contains("ashdi.vip")) {
-                processAshdiIframe(vUrl, callback)
-            } else if (vUrl.contains(".m3u8")) {
-                extractM3u8(vUrl, "AnimeON VOD", mainUrl, callback)
+            when {
+                vUrl.contains("moonanime") -> {
+                    val moonFile = getMoonFile(vUrl)
+                    if (moonFile.isNotEmpty()) extractM3u8(moonFile, "MoonAnime", "https://moonanime.art/", callback)
+                }
+                vUrl.contains("ashdi.vip") -> processAshdiIframe(vUrl, callback)
+                vUrl.contains(".m3u8") -> extractM3u8(vUrl, "AnimeON VOD", mainUrl, callback)
             }
         }
         return true
     }
 
     private suspend fun extractM3u8(url: String, name: String, referer: String, callback: (ExtractorLink) -> Unit) {
-        M3u8Helper.generateM3u8(
-            source = name,
-            streamUrl = url,
-            referer = referer,
-            headers = mapOf("User-Agent" to userAgent)
-        ).forEach(callback)
+        M3u8Helper.generateM3u8(name, url, referer, headers = mapOf("User-Agent" to userAgent)).forEach(callback)
     }
 
     private suspend fun processAshdiIframe(iframeUrl: String, callback: (ExtractorLink) -> Unit) {
@@ -231,35 +197,49 @@ class AnimeONProvider : MainAPI() {
             val url = if (iframeUrl.contains("?")) iframeUrl else "$iframeUrl?player=animeon.club"
             val html = app.get(url, headers = mapOf("Referer" to "$mainUrl/")).text
             val fileRegex = Regex("""file\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""")
-            val match = fileRegex.find(html)?.groupValues?.get(1)
-            if (match != null) extractM3u8(match, "Ashdi VOD", "https://ashdi.vip/", callback)
+            fileRegex.find(html)?.groupValues?.get(1)?.let { extractM3u8(it, "Ashdi VOD", "https://ashdi.vip/", callback) }
         } catch (e: Exception) { }
+    }
+
+    // ВИПРАВЛЕНО: Розширене отримання MoonAnime з подвійним дешифруванням
+    private suspend fun getMoonFile(iframeUrl: String): String {
+        return try {
+            val html = app.get(iframeUrl, headers = mapOf("User-Agent" to userAgent, "Referer" to mainUrl)).text
+            val fileRegex = Regex("""file:\s*_0xd\(["']([^"']+)["']\)""")
+            val directMatch = fileRegex.find(html)?.groupValues?.get(1)
+            
+            if (directMatch != null) moonDecrypt(directMatch)
+            else {
+                val atobRegex = Regex("""atob\(["']([^"']+)["']\)""")
+                val atobMatch = atobRegex.find(html)?.groupValues?.get(1)
+                if (atobMatch != null) {
+                    val decodedJs = moonOuterDecode(atobMatch)
+                    fileRegex.find(decodedJs)?.groupValues?.get(1)?.let { moonDecrypt(it) } ?: ""
+                } else ""
+            }
+        } catch (e: Exception) { "" }
     }
 
     private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
         return try {
             val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
             val result = StringBuilder()
-            for (i in decoded.indices) {
-                result.append((decoded[i].toInt() and 0xFF xor key[i % key.length].code).toChar())
-            }
+            for (i in decoded.indices) result.append((decoded[i].toInt() and 0xFF xor key[i % key.length].code).toChar())
             result.toString()
         } catch (e: Exception) { "" }
     }
 
-    private suspend fun getMoonFile(iframeUrl: String): String {
-        val html = app.get(iframeUrl, headers = mapOf(
-            "User-Agent" to userAgent,
-            "Referer" to "https://animeon.club/"
-        )).text
-        val fileRegex = Regex("""file:\s*_0xd\(["']([^"']+)["']\)""")
-        val directMatch = fileRegex.find(html)?.groupValues?.get(1)
-        if (directMatch != null) return moonDecrypt(directMatch)
-        return ""
+    private fun moonOuterDecode(base64Blob: String): String {
+        return try {
+            val raw = android.util.Base64.decode(base64Blob, android.util.Base64.DEFAULT)
+            if (raw.size < 32) return ""
+            val key = raw.sliceArray(0 until 32)
+            val data = raw.sliceArray(32 until raw.size)
+            val result = StringBuilder()
+            for (i in data.indices) result.append(((data[i].toInt() and 0xFF) xor (key[i % 32].toInt() and 0xFF)).toChar())
+            result.toString()
+        } catch (e: Exception) { "" }
     }
 
-    private fun extractIntFromString(string: String): Int? {
-        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
-        return value.value.removePrefix("0").toIntOrNull()
-    }
+    private fun extractIntFromString(string: String): Int? = Regex("(\\d+)").findAll(string).lastOrNull()?.value?.removePrefix("0")?.toIntOrNull()
 }
