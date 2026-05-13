@@ -79,28 +79,31 @@ class AnimeONProvider : MainAPI() {
             )).text
             val fileRegex = Regex("""file\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""")
             val ashdiFile = fileRegex.find(html)?.groupValues?.get(1) ?: return
+            
             val links = M3u8Helper.generateM3u8(
                 source = sourceName,
                 streamUrl = ashdiFile,
                 referer = "https://ashdi.vip"
             )
+            
             if (links.isNotEmpty()) {
                 (if (links.size > 1) links.dropLast(1) else links).forEach(callback)
             } else {
-                callback(ExtractorLink(
-                    source = sourceName,
-                    name = sourceName,
-                    url = ashdiFile,
-                    referer = "https://ashdi.vip",
-                    quality = -1,
-                    isM3u8 = true
-                ))
+                callback(
+                    newExtractorLink(
+                        source = sourceName,
+                        name = sourceName,
+                        url = ashdiFile,
+                        referer = "https://ashdi.vip",
+                        quality = Qualities.Unknown.value,
+                        isM3u8 = true
+                    )
+                )
             }
         } catch (e: Exception) { }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-
         if (request.name == "Популярні аніме") {
             if (page != 1) return newHomePageResponse(request.name, emptyList())
 
@@ -301,14 +304,16 @@ class AnimeONProvider : MainAPI() {
             if (links.isNotEmpty()) {
                 (if (links.size > 1) links.dropLast(1) else links).forEach(callback)
             } else {
-                callback(ExtractorLink(
-                    source = sourceName,
-                    name = sourceName,
-                    url = epData.fileUrl!!,
-                    referer = "https://ashdi.vip",
-                    quality = -1,
-                    isM3u8 = true
-                ))
+                callback(
+                    newExtractorLink(
+                        source = sourceName,
+                        name = sourceName,
+                        url = epData.fileUrl!!,
+                        referer = "https://ashdi.vip",
+                        quality = Qualities.Unknown.value,
+                        isM3u8 = true
+                    )
+                )
             }
             return true
         }
