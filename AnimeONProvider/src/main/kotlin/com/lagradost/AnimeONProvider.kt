@@ -133,7 +133,7 @@ class AnimeONProvider : MainAPI() {
         }
     }
 
-    override suspend fun load(url: String): LoadResponse {
+        override suspend fun load(url: String): LoadResponse {
         val animeId = url.split("/").last { it.isNotEmpty() }.filter { it.isDigit() }.toInt()
         val jsonText = fetchJsonOrNull("$apiUrl/$animeId") ?: throw Exception("Failed to load")
         val animeJSON = Gson().fromJson(jsonText, AnimeInfoModel::class.java)
@@ -158,10 +158,12 @@ class AnimeONProvider : MainAPI() {
                         val epJson = fetchJsonOrNull(epUrl) ?: continue
                         val eps = try { Gson().fromJson(epJson, PlayerEpisodes::class.java)?.episodes } catch (e: Exception) { null } ?: continue
 
+                        // ВИПРАВЛЕНО: Використовуємо цикл замість map, щоб працювали suspend функції
                         for (ep in eps) {
+                            val poster = if (ep.poster.isNotEmpty()) ep.poster else getAshdiPoster(ep.videoUrl)
                             episodes.add(newEpisode("$animeId|${ep.id}") {
                                 this.name = "Епізод ${ep.episode} ($dubName)"
-                                this.posterUrl = ep.poster.takeIf { it.isNotEmpty() } ?: getAshdiPoster(ep.videoUrl)
+                                this.posterUrl = poster
                                 this.episode = ep.episode
                             })
                         }
@@ -182,7 +184,7 @@ class AnimeONProvider : MainAPI() {
             this.score = Score.from10(animeJSON.rating)
             addEpisodes(DubStatus.Dubbed, episodes.sortedBy { it.episode })
             addMalId(animeJSON.malId.toIntOrNull())
-        }
+        }  
     }
 
     override suspend fun loadLinks(
