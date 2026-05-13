@@ -320,10 +320,11 @@ if (!fileUrl.isNullOrEmpty()) {
             source = "${item.translation.name} (${player.name})",
             name = "${item.translation.name} (${player.name})",
             url = fileUrl,
-            referer = "https://ashdi.vip",
-            quality = Qualities.Unknown.value,
-            isM3u8 = true
-        )
+        ) {
+            this.referer = "https://ashdi.vip"
+            this.quality = Qualities.Unknown.value
+            this.isM3u8 = true
+        }
     )
     break
 }
