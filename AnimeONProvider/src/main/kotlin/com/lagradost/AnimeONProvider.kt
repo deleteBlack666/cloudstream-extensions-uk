@@ -79,7 +79,8 @@ class AnimeONProvider : MainAPI() {
         val jsonText = fetchJson("$apiUrl/$animeId") ?: throw Exception("Data not found")
         val anime = Gson().fromJson(jsonText, AnimeInfoModel::class.java)
 
-        val episodes = mutableListOf<Episode>()
+        // ВИПРАВЛЕНО: Явне вказання типу для уникнення конфлікту (Ambiguity)
+        val episodesList = mutableListOf<com.lagradost.cloudstream3.Episode>()
         val translationsJson = fetchJson("$mainUrl/api/player/$animeId/translations")
         
         if (translationsJson != null) {
@@ -88,12 +89,12 @@ class AnimeONProvider : MainAPI() {
             
             translations.forEach { transItem ->
                 transItem.player.forEach { player ->
-                    // Обмеження для стабільності: беремо перші 100 епізодів
                     val epJson = fetchJson("$mainUrl/api/player/$animeId/episodes?take=100&skip=0&playerId=${player.id}&translationId=${transItem.translation.id}")
                     if (epJson != null) {
-                        Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes.forEach { ep ->
+                        // ВИПРАВЛЕНО: Додано .orEmpty() для безпечної роботи з nullable списком
+                        Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes.orEmpty().forEach { ep ->
                             if (seenEpisodes.add(ep.episode)) {
-                                episodes.add(newEpisode("$animeId|${ep.episode}|${ep.id}") {
+                                episodesList.add(newEpisode("$animeId|${ep.episode}|${ep.id}") {
                                     this.name = "Епізод ${ep.episode}"
                                     this.episode = ep.episode
                                 })
@@ -109,7 +110,7 @@ class AnimeONProvider : MainAPI() {
             this.plot = anime.description
             this.year = anime.releaseDate.split("-").firstOrNull()?.toIntOrNull()
             this.tags = anime.genres.map { it.nameUa }
-            addEpisodes(DubStatus.Dubbed, episodes.sortedBy { it.episode })
+            addEpisodes(DubStatus.Dubbed, episodesList.sortedBy { it.episode })
             addTrailer(anime.trailer)
             addMalId(anime.malId.toIntOrNull())
         }
@@ -121,19 +122,19 @@ class AnimeONProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val (animeId, episodeNum, epId) = data.split("|")
+        val splitData = data.split("|")
+        if (splitData.size < 3) return false
+        val epId = splitData[2]
         
-        // Отримуємо пряме посилання на файл з FundubEpisode
         val epDetailJson = fetchJson("$mainUrl/api/player/$epId/episode") ?: return false
         val epData = Gson().fromJson(epDetailJson, FundubEpisode::class.java)
 
-        // 1. Перевірка fileUrl (якщо є прямий m3u8)
         if (!epData.fileUrl.isNullOrBlank()) {
             callback(
                 ExtractorLink(
                     source = "AnimeON",
-                    name = "Direct HLS",
-                    url = epData.fileUrl,
+                    name = "AnimeON Direct",
+                    url = epData.fileUrl!!,
                     referer = "https://ashdi.vip/",
                     quality = Qualities.Unknown.value,
                     isM3u8 = true
@@ -141,9 +142,8 @@ class AnimeONProvider : MainAPI() {
             )
         }
 
-        // 2. Перевірка videoUrl (якщо там iframe ashdi)
-        if (!epData.videoUrl.isNullOrBlank() && epData.videoUrl.contains("ashdi")) {
-            val ashdiUrl = if (epData.videoUrl.startsWith("http")) epData.videoUrl else "https:${epData.videoUrl}"
+        if (!epData.videoUrl.isNullOrBlank() && epData.videoUrl!!.contains("ashdi")) {
+            val ashdiUrl = if (epData.videoUrl!!.startsWith("http")) epData.videoUrl!! else "https:${epData.videoUrl}"
             val html = app.get(ashdiUrl, headers = mapOf("Referer" to "$mainUrl/")).text
             val m3u8 = Regex("""file\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""").find(html)?.groupValues?.get(1)
             
