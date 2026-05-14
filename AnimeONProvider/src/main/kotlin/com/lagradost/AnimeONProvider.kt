@@ -241,7 +241,7 @@ class AnimeONProvider : MainAPI() {
                 } else null
 
                 var episode: FundubEpisode? = null
-                for (offset in 0..5000 step 100) {
+                    for (offset in 0..10000 step 100) {
                     val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
                     val epJson = fetchJsonOrNull(epUrl) ?: break
                     val parsed = try {
