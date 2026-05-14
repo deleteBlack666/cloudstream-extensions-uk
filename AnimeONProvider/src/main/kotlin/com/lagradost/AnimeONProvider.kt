@@ -70,7 +70,6 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
-    // ВІДНОВЛЕНО: Функція для обробки iframe Ashdi, яка необхідна для деяких аніме (напр. 130)
     private suspend fun processAshdiIframe(iframeUrl: String, sourceName: String, callback: (ExtractorLink) -> Unit) {
         try {
             val url = if (iframeUrl.contains("?")) iframeUrl else "$iframeUrl?player=animeon.club"
@@ -94,11 +93,12 @@ class AnimeONProvider : MainAPI() {
                     newExtractorLink(
                         sourceName,
                         sourceName,
-                        ashdiFile,
-                        referer = "https://ashdi.vip",
-                        quality = 0,
-                        isM3u8 = true
-                    )
+                        ashdiFile
+                    ) {
+                        this.referer = "https://ashdi.vip"
+                        this.quality = 0
+                        this.isM3u8 = true
+                    }
                 )
             }
         } catch (e: Exception) { }
@@ -343,11 +343,12 @@ class AnimeONProvider : MainAPI() {
                             newExtractorLink(
                                 sourceName,
                                 sourceName,
-                                fileUrl,
-                                referer = "https://ashdi.vip",
-                                quality = 0,
-                                isM3u8 = true
-                            )
+                                fileUrl
+                            ) {
+                                this.referer = "https://ashdi.vip"
+                                this.quality = 0
+                                this.isM3u8 = true
+                            }
                         )
                     }
                 }
@@ -355,7 +356,6 @@ class AnimeONProvider : MainAPI() {
                 val videoUrl = realVideoUrl ?: episode?.videoUrl
                 if (!videoUrl.isNullOrEmpty()) {
                     when {
-                        // ЗМІНЕНО: Повернули перевірку на ashdi.vip для старих аніме, що не мають fileUrl
                         videoUrl.contains("ashdi.vip") -> {
                             processAshdiIframe(videoUrl, sourceName, callback)
                         }
