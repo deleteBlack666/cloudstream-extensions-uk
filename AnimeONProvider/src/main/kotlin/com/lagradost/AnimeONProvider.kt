@@ -323,19 +323,17 @@ class AnimeONProvider : MainAPI() {
                 }
 
                 val fileUrl = episode?.fileUrl
-                if (!fileUrl.isNullOrEmpty()) {
-                    val links = M3u8Helper.generateM3u8(
-                        source = sourceName,
-                        streamUrl = fileUrl,
-                        referer = "https://ashdi.vip"
-                    )
-                    if (links.isNotEmpty()) {
-                        (if (links.size > 1) links.dropLast(1) else links).forEach(callback)
-                    } else {
-                        processAshdiIframe(episode?.videoUrl ?: fileUrl, sourceName, callback)
-                    }
-                    break
-                }
+if (!fileUrl.isNullOrEmpty()) {
+    callback(newExtractorLink(
+        source = sourceName,
+        name = sourceName,
+        url = fileUrl,
+        type = ExtractorLinkType.M3U8
+    ) {
+        this.referer = "https://ashdi.vip"
+    })
+    break
+}
 
                 val videoUrl = realVideoUrl ?: episode?.videoUrl
 
