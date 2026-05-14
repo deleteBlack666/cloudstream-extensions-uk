@@ -8,7 +8,6 @@ import com.lagradost.cloudstream3.LoadResponse.Companion.addMalId
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.M3u8Helper
-import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.models.*
 
 class AnimeONProvider : MainAPI() {
@@ -89,15 +88,15 @@ class AnimeONProvider : MainAPI() {
             if (links.isNotEmpty()) {
                 (if (links.size > 1) links.dropLast(1) else links).forEach(callback)
             } else {
-                // ВИПРАВЛЕНО: Використовуємо позиційні аргументи без lambda
+                // ВИПРАВЛЕНО: Використовуємо прямий конструктор ExtractorLink
                 callback(
-                    newExtractorLink(
-                        sourceName,
-                        sourceName,
-                        ashdiFile,
-                        "https://ashdi.vip",
-                        0, // Quality (0 = Unknown)
-                        true // isM3u8
+                    ExtractorLink(
+                        source = sourceName,
+                        name = sourceName,
+                        url = ashdiFile,
+                        referer = "https://ashdi.vip",
+                        quality = Qualities.Unknown.value,
+                        isM3u8 = true
                     )
                 )
             }
@@ -339,15 +338,15 @@ class AnimeONProvider : MainAPI() {
                     if (links.isNotEmpty()) {
                         links.dropLast(1).forEach(callback)
                     } else {
-                        // ВИПРАВЛЕНО: Позиційні аргументи
+                        // ВИПРАВЛЕНО: Прямий конструктор для подолання обмежень помічника
                         callback(
-                            newExtractorLink(
-                                sourceName,
-                                sourceName,
-                                fileUrl,
-                                "https://ashdi.vip",
-                                0,
-                                true
+                            ExtractorLink(
+                                source = sourceName,
+                                name = sourceName,
+                                url = fileUrl,
+                                referer = "https://ashdi.vip",
+                                quality = Qualities.Unknown.value,
+                                isM3u8 = true
                             )
                         )
                     }
@@ -466,3 +465,4 @@ class AnimeONProvider : MainAPI() {
         return value.value.toIntOrNull()
     }
 }
+ 
