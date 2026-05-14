@@ -156,12 +156,20 @@ class AnimeONProvider : MainAPI() {
                         val collected = mutableListOf<FundubEpisode>()
                         // Збільшено ліміт до 20000
                         for (offset in 0..20000 step 100) {
-                            val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
-                            val epJson = fetchJsonOrNull(epUrl) ?: break
-                            val eps = try { Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes } catch (e: Exception) { null }
-                            if (eps.isNullOrEmpty()) break
-                            collected.addAll(eps)
-                            if (eps.size < 100) break
+    val epUrl =
+        "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
+
+    val epJson = fetchJsonOrNull(epUrl) ?: continue
+
+    val eps = try {
+        Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes
+    } catch (e: Exception) {
+        null
+    } ?: continue
+
+    if (eps.isEmpty()) continue
+
+    collected.addAll(eps)
                         }
                         for (ep in collected) {
                             if (seenEpisodes.add(ep.episode)) {
@@ -243,17 +251,7 @@ class AnimeONProvider : MainAPI() {
 
                 var episode: FundubEpisode? = null
                 // Збільшено ліміт до 20000
-                for (offset in 0..20000 step 100) {
-                    val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
-                    val epJson = fetchJsonOrNull(epUrl) ?: break
-                    val parsed = try {
-                        Gson().fromJson(epJson, PlayerEpisodes::class.java)
-                    } catch (e: Exception) { null } ?: continue
-                    val eps = parsed.episodes ?: emptyList()
-                    if (eps.isEmpty()) break
-                    episode = eps.firstOrNull { it.episode == targetEpisode }
-                    if (episode != null) break
-                }
+                
 
                 // Спочатку перевіряємо videoUrl (для Ashdi)
                 val videoUrl = realVideoUrl ?: episode?.videoUrl
