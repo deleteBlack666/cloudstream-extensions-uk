@@ -89,16 +89,16 @@ class AnimeONProvider : MainAPI() {
             if (links.isNotEmpty()) {
                 (if (links.size > 1) links.dropLast(1) else links).forEach(callback)
             } else {
+                // ВИПРАВЛЕНО: Використовуємо позиційні аргументи без lambda
                 callback(
                     newExtractorLink(
                         sourceName,
                         sourceName,
-                        ashdiFile
-                    ) {
-                        this.referer = "https://ashdi.vip"
-                        this.quality = 0
-                        this.isM3u8 = true
-                    }
+                        ashdiFile,
+                        "https://ashdi.vip",
+                        0, // Quality (0 = Unknown)
+                        true // isM3u8
+                    )
                 )
             }
         } catch (e: Exception) { }
@@ -339,16 +339,16 @@ class AnimeONProvider : MainAPI() {
                     if (links.isNotEmpty()) {
                         links.dropLast(1).forEach(callback)
                     } else {
+                        // ВИПРАВЛЕНО: Позиційні аргументи
                         callback(
                             newExtractorLink(
                                 sourceName,
                                 sourceName,
-                                fileUrl
-                            ) {
-                                this.referer = "https://ashdi.vip"
-                                this.quality = 0
-                                this.isM3u8 = true
-                            }
+                                fileUrl,
+                                "https://ashdi.vip",
+                                0,
+                                true
+                            )
                         )
                     }
                 }
