@@ -7,6 +7,7 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addMalId
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.models.*
@@ -87,13 +88,11 @@ class AnimeONProvider : MainAPI() {
             if (links.isNotEmpty()) {
                 (if (links.size > 1) links.dropLast(1) else links).forEach(callback)
             } else {
-                callback(ExtractorLink(
+                callback(newExtractorLink(
                     source = sourceName,
                     name = sourceName,
                     url = ashdiFile,
-                    referer = "https://ashdi.vip",
-                    quality = -1,
-                    isM3u8 = true
+                    type = ExtractorLinkType.M3U8
                 ))
             }
         } catch (e: Exception) { }
