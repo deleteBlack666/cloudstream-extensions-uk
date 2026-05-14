@@ -131,7 +131,7 @@ class AnimeONProvider : MainAPI() {
         }
     }
 
-    override suspend fun load(url: String): LoadResponse {
+override suspend fun load(url: String): LoadResponse {
     val animeId = url.substringAfterLast("/").substringBefore("-").toInt()
     val jsonText = fetchJsonOrNull("$apiUrl/$animeId") ?: throw Exception("Failed to load")
     val animeJSON = Gson().fromJson(jsonText, AnimeInfoModel::class.java)
@@ -152,27 +152,28 @@ class AnimeONProvider : MainAPI() {
             val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
             val seenEpisodes = mutableSetOf<Int>()
 
-            // 1. Знаходимо плеєр з найбільшою кількістю серій
-            var bestPlayer: Player? = null
-            var bestTranslation: Translation? = null
-            var maxEpisodes = 0
+            // 1. Знаходимо плеєр з найбільшим episodesCount
+            var bestPlayerId: Int? = null
+            var bestTranslationId: Int? = null
+            var maxEp = 0
 
             for (translation in translations) {
+                val trId = translation.translation.id
                 for (player in translation.player) {
-                    val count = player.episodesCount ?: 0
-                    if (count > maxEpisodes) {
-                        maxEpisodes = count
-                        bestPlayer = player
-                        bestTranslation = translation.translation
+                    val cnt = player.episodesCount ?: 0
+                    if (cnt > maxEp) {
+                        maxEp = cnt
+                        bestPlayerId = player.id
+                        bestTranslationId = trId
                     }
                 }
             }
 
             // 2. Збираємо серії з найкращого плеєра
-            if (bestPlayer != null && bestTranslation != null) {
+            if (bestPlayerId != null && bestTranslationId != null) {
                 var offset = 0
                 while (true) {
-                    val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${bestPlayer.id}&translationId=${bestTranslation.id}"
+                    val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=$bestPlayerId&translationId=$bestTranslationId"
                     val epJson = fetchJsonOrNull(epUrl) ?: break
                     val eps = try { Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes } catch (e: Exception) { null }
                     if (eps.isNullOrEmpty()) break
@@ -200,16 +201,17 @@ class AnimeONProvider : MainAPI() {
                 }
             }
 
-            // 3. Добираємо решту серій з інших плеєрів
+            // 3. Добираємо решту з інших плеєрів
             for (translation in translations) {
-                val translationId = translation.translation.id
+                val trId = translation.translation.id
                 for (player in translation.player) {
-                    // Пропускаємо плеєр, який вже обробили
-                    if (bestPlayer != null && bestTranslation != null && player.id == bestPlayer.id && translationId == bestTranslation.id) continue
+                    // Пропускаємо вже оброблений плеєр
+                    if (bestPlayerId != null && bestTranslationId != null &&
+                        player.id == bestPlayerId && trId == bestTranslationId) continue
 
                     var offset = 0
                     while (true) {
-                        val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
+                        val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$trId"
                         val epJson = fetchJsonOrNull(epUrl) ?: break
                         val eps = try { Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes } catch (e: Exception) { null }
                         if (eps.isNullOrEmpty()) break
@@ -269,7 +271,7 @@ class AnimeONProvider : MainAPI() {
             addMalId(animeJSON.malId.toIntOrNull())
         }
     }
-    }
+}
 
     override suspend fun loadLinks(
         data: String,
