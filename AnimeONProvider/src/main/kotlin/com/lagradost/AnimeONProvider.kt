@@ -151,6 +151,7 @@ if (translationsJson != null) {
         val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
         var collectedEpisodes: List<FundubEpisode>? = null
         var usePoster = false
+        var isMoon = false
 
         // Шукаємо будь-який плеєр Moon
         for (translation in translations) {
@@ -167,6 +168,7 @@ if (translationsJson != null) {
                     }
                     if (list.isNotEmpty()) {
                         collectedEpisodes = list
+                        isMoon = true
                         usePoster = true
                     }
                     break
@@ -175,7 +177,7 @@ if (translationsJson != null) {
             if (collectedEpisodes != null) break
         }
 
-        // Якщо Moon немає, беремо перший Ashdi (або будь-який інший)
+        // Якщо Moon немає, беремо перший-ліпший плеєр (Ashdi тощо)
         if (collectedEpisodes == null) {
             for (translation in translations) {
                 for (player in translation.player) {
@@ -190,7 +192,9 @@ if (translationsJson != null) {
                     }
                     if (list.isNotEmpty()) {
                         collectedEpisodes = list
-                        usePoster = false
+                        isMoon = false
+                        // Для Ashdi прев'ю будуть тільки якщо епізодів ≤ 100
+                        usePoster = list.size <= 100
                     }
                     break
                 }
@@ -201,9 +205,14 @@ if (translationsJson != null) {
         // Додаємо знайдені епізоди
         if (collectedEpisodes != null) {
             for (ep in collectedEpisodes) {
+                val posterUrl = if (usePoster) {
+                    if (isMoon) ep.poster
+                    else getAshdiPoster(ep.videoUrl)   // тільки для невеликих Ashdi-тайтлів
+                } else null
+
                 episodes.add(newEpisode("$animeId, ${ep.episode}, ${ep.id}") {
                     this.name = "Епізод ${ep.episode}"
-                    this.posterUrl = if (usePoster) ep.poster else null
+                    this.posterUrl = posterUrl
                     this.episode = ep.episode
                     this.data = "$animeId, ${ep.episode}, ${ep.id}"
                 })
