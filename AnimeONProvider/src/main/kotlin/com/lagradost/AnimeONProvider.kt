@@ -257,8 +257,8 @@ class AnimeONProvider : MainAPI() {
                 val videoUrl = realVideoUrl ?: episode?.videoUrl
                 if (!videoUrl.isNullOrEmpty()) {
                     if (videoUrl.contains("ashdi.vip")) {
-                        processAshdiIframe(videoUrl, callback)
-                        return true
+    processAshdiIframe(videoUrl, "${item.translation.name} (${player.name})", callback)
+    return true
                     }
                     if (videoUrl.contains("moonanime.art")) {
                         if (videoUrl.contains("m3u8")) {
@@ -323,20 +323,21 @@ class AnimeONProvider : MainAPI() {
         return false
     }
 
-    private suspend fun processAshdiIframe(iframeUrl: String, callback: (ExtractorLink) -> Unit) {
-        try {
-            val url = if (iframeUrl.contains("?")) iframeUrl else "$iframeUrl?player=animeon.club"
-            val html = app.get(url, headers = mapOf("Referer" to "$mainUrl/")).text
-            val fileRegex = Regex("""file\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""")
-            fileRegex.find(html)?.groupValues?.get(1)?.let { m3u8 ->
-                M3u8Helper.generateM3u8(
-                    source = "Ashdi",
-                    streamUrl = m3u8,
-                    referer = "https://ashdi.vip/"
-                ).dropLast(1).forEach(callback)
-            }
-        } catch (e: Exception) { }
+    private suspend fun processAshdiIframe(iframeUrl: String, sourceName: String, callback: (ExtractorLink) -> Unit) {
+    try {
+        val url = if (iframeUrl.contains("?")) iframeUrl else "$iframeUrl?player=animeon.club"
+        val html = app.get(url, headers = mapOf("Referer" to "$mainUrl/")).text
+        val fileRegex = Regex("""file\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""")
+        fileRegex.find(html)?.groupValues?.get(1)?.let { m3u8 ->
+            M3u8Helper.generateM3u8(
+                source = sourceName,   // використовуємо передане ім'я озвучення
+                streamUrl = m3u8,
+                referer = "https://ashdi.vip/"
+            ).dropLast(1).forEach(callback)
+        }
+    } catch (e: Exception) { }
     }
+    
 
     private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
         return try {
