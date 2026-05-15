@@ -208,7 +208,7 @@ class AnimeONProvider : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(
+                    override suspend fun loadLinks(
     data: String,
     isCasting: Boolean,
     subtitleCallback: (SubtitleFile) -> Unit,
@@ -228,7 +228,6 @@ class AnimeONProvider : MainAPI() {
 
     var foundAny = false
 
-    // Основний перебір усіх озвучень і плеєрів через загальний список
     translations.forEach { item ->
         val translationId = item.translation.id
         for (player in item.player) {
@@ -247,77 +246,83 @@ class AnimeONProvider : MainAPI() {
 
             if (episode == null) continue
 
-            // fileUrl
+            val isAshdi = player.name.contains("Ashdi", ignoreCase = true)
             val fileUrl = episode.fileUrl
-            if (!fileUrl.isNullOrEmpty()) {
-                M3u8Helper.generateM3u8(
-                    source = "${item.translation.name} (${player.name})",
-                    streamUrl = fileUrl,
-                    referer = "https://ashdi.vip"
-                ).dropLast(1).forEach(callback)
-                foundAny = true
-                continue
-            }
-
-            // videoUrl з Moon
             val videoUrl = episode.videoUrl
-            if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
-                if (videoUrl.contains("m3u8")) {
+
+            if (isAshdi) {
+                // Для Ashdi спочатку пробуємо videoUrl (надійніше), інакше fileUrl
+                if (!videoUrl.isNullOrEmpty() && videoUrl.contains("ashdi.vip")) {
+                    processAshdiIframe(videoUrl, "${item.translation.name} (${player.name})", callback)
+                    foundAny = true
+                } else if (!fileUrl.isNullOrEmpty()) {
                     M3u8Helper.generateM3u8(
                         source = "${item.translation.name} (${player.name})",
-                        streamUrl = videoUrl,
-                        referer = "https://moonanime.art/"
+                        streamUrl = fileUrl,
+                        referer = "https://ashdi.vip"
                     ).dropLast(1).forEach(callback)
                     foundAny = true
-                    continue
                 }
-                val rawFile = getMoonFile(videoUrl)
-                if (rawFile.isNotEmpty()) {
-                    val sourceName = "${item.translation.name} (${player.name})"
-                    if (rawFile.startsWith("[")) {
-                        val qualityRegex = Regex("""\[(\d+p)\](https?://[^\s,]+)""")
-                        qualityRegex.findAll(rawFile).forEach { match ->
-                            val quality = match.groupValues[1]
-                            val url = match.groupValues[2]
-                            M3u8Helper.generateM3u8(
-                                source = "$sourceName $quality",
-                                streamUrl = url,
-                                referer = "https://moonanime.art/",
-                                headers = mapOf(
-                                    "User-Agent" to userAgent,
-                                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                                    "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
-                                    "Referer" to "https://animeon.club/"
-                                )
-                            ).dropLast(1).forEach(callback)
-                        }
-                    } else if (rawFile.contains(".m3u8")) {
-                        M3u8Helper.generateM3u8(
-                            source = sourceName,
-                            streamUrl = rawFile,
-                            referer = "https://moonanime.art/",
-                            headers = mapOf(
-                                "User-Agent" to userAgent,
-                                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                                "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
-                                "Referer" to "https://animeon.club/"
-                            )
-                        ).dropLast(1).forEach(callback)
-                    }
+            } else {
+                // Для не-Ashdi (Moon тощо) спочатку fileUrl (якщо є), потім Moon-обробка
+                if (!fileUrl.isNullOrEmpty()) {
+                    M3u8Helper.generateM3u8(
+                        source = "${item.translation.name} (${player.name})",
+                        streamUrl = fileUrl,
+                        referer = "https://ashdi.vip"
+                    ).dropLast(1).forEach(callback)
                     foundAny = true
-                    continue
+                } else if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
+                    if (videoUrl.contains("m3u8")) {
+                        M3u8Helper.generateM3u8(
+                            source = "${item.translation.name} (${player.name})",
+                            streamUrl = videoUrl,
+                            referer = "https://moonanime.art/"
+                        ).dropLast(1).forEach(callback)
+                        foundAny = true
+                    } else {
+                        val rawFile = getMoonFile(videoUrl)
+                        if (rawFile.isNotEmpty()) {
+                            val sourceName = "${item.translation.name} (${player.name})"
+                            if (rawFile.startsWith("[")) {
+                                val qualityRegex = Regex("""\[(\d+p)\](https?://[^\s,]+)""")
+                                qualityRegex.findAll(rawFile).forEach { match ->
+                                    val quality = match.groupValues[1]
+                                    val url = match.groupValues[2]
+                                    M3u8Helper.generateM3u8(
+                                        source = "$sourceName $quality",
+                                        streamUrl = url,
+                                        referer = "https://moonanime.art/",
+                                        headers = mapOf(
+                                            "User-Agent" to userAgent,
+                                            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                                            "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
+                                            "Referer" to "https://animeon.club/"
+                                        )
+                                    ).dropLast(1).forEach(callback)
+                                }
+                            } else if (rawFile.contains(".m3u8")) {
+                                M3u8Helper.generateM3u8(
+                                    source = sourceName,
+                                    streamUrl = rawFile,
+                                    referer = "https://moonanime.art/",
+                                    headers = mapOf(
+                                        "User-Agent" to userAgent,
+                                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                                        "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
+                                        "Referer" to "https://animeon.club/"
+                                    )
+                                ).dropLast(1).forEach(callback)
+                            }
+                            foundAny = true
+                        }
+                    }
                 }
-            }
-
-            // Якщо це Ashdi, але fileUrl порожній, а videoUrl веде на ashdi.vip – обробляємо через iframe
-            if (!videoUrl.isNullOrEmpty() && videoUrl.contains("ashdi.vip")) {
-                processAshdiIframe(videoUrl, "${item.translation.name} (${player.name})", callback)
-                foundAny = true
             }
         }
     }
 
-    // Резервний прямий запит для Ashdi, якщо episodeId відомий (на випадок, якщо в загальному списку не було videoUrl)
+    // Резервний прямий запит для Ashdi, якщо episodeId відомий
     if (episodeId != null) {
         try {
             val epDetailJson = fetchJsonOrNull("$mainUrl/api/player/$episodeId/episode")
@@ -333,7 +338,7 @@ class AnimeONProvider : MainAPI() {
     }
 
     return foundAny
-    }                  
+                    }                  
                         
 
     private suspend fun processAshdiIframe(iframeUrl: String, sourceName: String, callback: (ExtractorLink) -> Unit) {
