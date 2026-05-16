@@ -158,7 +158,6 @@ class AnimeONProvider : MainAPI() {
         val animeId = url.substringAfterLast("/").substringBefore("-").toIntOrNull()
             ?: throw Exception("Invalid anime ID in URL: $url")
 
-        // Резолвимо реальний URL з урахуванням можливого редіректу
         val realApiUrl = resolveAnimeApiUrl(animeId)
         val jsonText = fetchJsonOrNull(realApiUrl) ?: throw Exception("Failed to load anime $animeId")
         val animeJSON = Gson().fromJson(jsonText, AnimeInfoModel::class.java)
@@ -262,6 +261,7 @@ class AnimeONProvider : MainAPI() {
 
         translations.forEach { item ->
             val translationId = item.translation.id
+            val isSub = item.translation.isSub ?: false   // <-- перевірка на субтитри
             for (player in item.player) {
                 var episode: FundubEpisode? = null
                 for (offset in 0..11000 step 100) {
@@ -278,9 +278,36 @@ class AnimeONProvider : MainAPI() {
 
                 if (episode == null) continue
 
-                val isAshdi = player.name.contains("Ashdi", ignoreCase = true)
                 val fileUrl = episode.fileUrl
                 val videoUrl = episode.videoUrl
+
+                if (isSub) {
+                    // ===== ОБРОБКА СУБТИТРІВ =====
+                    val subUrl = fileUrl ?: videoUrl   // пробуємо обидва поля
+                    if (!subUrl.isNullOrEmpty()) {
+                        // Визначаємо формат субтитрів за розширенням
+                        val type = when {
+                            subUrl.endsWith(".vtt") -> SubtitleType.VTT
+                            subUrl.endsWith(".ass") -> SubtitleType.ASS
+                            subUrl.endsWith(".ssa") -> SubtitleType.SSA
+                            subUrl.endsWith(".srt") -> SubtitleType.SRT
+                            else -> SubtitleType.VTT   // припускаємо VTT за замовчуванням
+                        }
+                        subtitleCallback(
+                            SubtitleFile(
+                                url = subUrl,
+                                name = "${item.translation.name} (${player.name})",
+                                lang = "uk",
+                                type = type
+                            )
+                        )
+                    }
+                    // субтитри не вважаються відеопотоком, тому foundAny не міняємо
+                    continue
+                }
+
+                // ===== ЗВИЧАЙНА ОБРОБКА ВІДЕО =====
+                val isAshdi = player.name.contains("Ashdi", ignoreCase = true)
 
                 if (isAshdi) {
                     if (!videoUrl.isNullOrEmpty() && videoUrl.contains("ashdi.vip")) {
