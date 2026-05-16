@@ -283,15 +283,17 @@ class AnimeONProvider : MainAPI() {
                 val videoUrl = episode.videoUrl
 
                 if (isAshdi) {
-                    if (!videoUrl.isNullOrEmpty() && videoUrl.contains("ashdi.vip")) {
-                        processAshdiIframe(videoUrl, "${item.translation.name} (${player.name})", callback)
-                        foundAny = true
-                    } else if (!fileUrl.isNullOrEmpty()) {
+                    if (!fileUrl.isNullOrEmpty()) {
+                        // fileUrl має пріоритет — це прямий m3u8 (надійніше ніж парсинг iframe)
                         M3u8Helper.generateM3u8(
                             source = "${item.translation.name} (${player.name})",
                             streamUrl = fileUrl,
                             referer = "https://ashdi.vip"
                         ).dropLast(1).forEach(callback)
+                        foundAny = true
+                    } else if (!videoUrl.isNullOrEmpty() && videoUrl.contains("ashdi.vip")) {
+                        // fallback — парсимо iframe тільки якщо fileUrl відсутній
+                        processAshdiIframe(videoUrl, "${item.translation.name} (${player.name})", callback)
                         foundAny = true
                     }
                 } else {
@@ -442,4 +444,3 @@ class AnimeONProvider : MainAPI() {
         return value.value.toIntOrNull()
     }
 }
- 
