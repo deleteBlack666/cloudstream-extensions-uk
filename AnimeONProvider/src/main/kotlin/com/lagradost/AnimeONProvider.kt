@@ -385,17 +385,17 @@ class AnimeONProvider : MainAPI() {
             )
         ).text
 
-        // Спочатку шукаємо m3u8 через стандартний вираз file:
+        // 1. Стандартний пошук file: "m3u8"
         var m3u8 = Regex("""file\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""")
             .find(html)?.groupValues?.get(1)
 
-        // Якщо не знайшли, пробуємо знайти будь-яке посилання на .m3u8 у тексті
+        // 2. Розширений пошук – будь-яке .m3u8 посилання в HTML
         if (m3u8 == null) {
             m3u8 = Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""")
                 .find(html)?.groupValues?.get(1)
         }
 
-        // Якщо досі немає, пробуємо завантажити без player=animeon.club
+        // 3. Спробувати без player=animeon.club
         if (m3u8 == null) {
             val plainUrl = iframeUrl.substringBefore("?")
             html = app.get(
@@ -409,6 +409,8 @@ class AnimeONProvider : MainAPI() {
             ).text
             m3u8 = Regex("""file\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""")
                 .find(html)?.groupValues?.get(1)
+                ?: Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""")
+                .find(html)?.groupValues?.get(1)
         }
 
         if (m3u8 != null) {
@@ -419,7 +421,7 @@ class AnimeONProvider : MainAPI() {
             ).dropLast(1).forEach(callback)
         }
     } catch (e: Exception) { }
-    }
+    } 
 
     private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
         return try {
