@@ -373,18 +373,52 @@ class AnimeONProvider : MainAPI() {
     }
 
     private suspend fun processAshdiIframe(iframeUrl: String, sourceName: String, callback: (ExtractorLink) -> Unit) {
-        try {
-            val url = if (iframeUrl.contains("?")) iframeUrl else "$iframeUrl?player=animeon.club"
-            val html = app.get(url, headers = mapOf("Referer" to "$mainUrl/")).text
-            val fileRegex = Regex("""file\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""")
-            fileRegex.find(html)?.groupValues?.get(1)?.let { m3u8 ->
-                M3u8Helper.generateM3u8(
-                    source = sourceName,
-                    streamUrl = m3u8,
-                    referer = "https://ashdi.vip/"
-                ).dropLast(1).forEach(callback)
-            }
-        } catch (e: Exception) { }
+    try {
+        val urlWithPlayer = if (iframeUrl.contains("?")) iframeUrl else "$iframeUrl?player=animeon.club"
+        var html = app.get(
+            urlWithPlayer,
+            headers = mapOf(
+                "Referer" to "$mainUrl/",
+                "User-Agent" to userAgent,
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"
+            )
+        ).text
+
+        // Спочатку шукаємо m3u8 через стандартний вираз file:
+        var m3u8 = Regex("""file\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""")
+            .find(html)?.groupValues?.get(1)
+
+        // Якщо не знайшли, пробуємо знайти будь-яке посилання на .m3u8 у тексті
+        if (m3u8 == null) {
+            m3u8 = Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""")
+                .find(html)?.groupValues?.get(1)
+        }
+
+        // Якщо досі немає, пробуємо завантажити без player=animeon.club
+        if (m3u8 == null) {
+            val plainUrl = iframeUrl.substringBefore("?")
+            html = app.get(
+                plainUrl,
+                headers = mapOf(
+                    "Referer" to "$mainUrl/",
+                    "User-Agent" to userAgent,
+                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"
+                )
+            ).text
+            m3u8 = Regex("""file\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""")
+                .find(html)?.groupValues?.get(1)
+        }
+
+        if (m3u8 != null) {
+            M3u8Helper.generateM3u8(
+                source = sourceName,
+                streamUrl = m3u8,
+                referer = "https://ashdi.vip/"
+            ).dropLast(1).forEach(callback)
+        }
+    } catch (e: Exception) { }
     }
 
     private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
