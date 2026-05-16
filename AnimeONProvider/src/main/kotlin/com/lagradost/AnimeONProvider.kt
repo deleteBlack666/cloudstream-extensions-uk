@@ -283,18 +283,20 @@ class AnimeONProvider : MainAPI() {
                 val videoUrl = episode.videoUrl
 
                 if (isAshdi) {
-                    if (!videoUrl.isNullOrEmpty() && videoUrl.contains("ashdi.vip")) {
-                        processAshdiIframe(videoUrl, "${item.translation.name} (${player.name})", callback)
-                        foundAny = true
-                    } else if (!fileUrl.isNullOrEmpty()) {
+                    // Для Ashdi (включно із субтитрами) спочатку fileUrl, потім videoUrl
+                    if (!fileUrl.isNullOrEmpty()) {
                         M3u8Helper.generateM3u8(
                             source = "${item.translation.name} (${player.name})",
                             streamUrl = fileUrl,
                             referer = "https://ashdi.vip"
                         ).dropLast(1).forEach(callback)
                         foundAny = true
+                    } else if (!videoUrl.isNullOrEmpty() && videoUrl.contains("ashdi.vip")) {
+                        processAshdiIframe(videoUrl, "${item.translation.name} (${player.name})", callback)
+                        foundAny = true
                     }
                 } else {
+                    // Для інших плеєрів (Moon) залишаємо стару логіку
                     if (!fileUrl.isNullOrEmpty()) {
                         M3u8Helper.generateM3u8(
                             source = "${item.translation.name} (${player.name})",
