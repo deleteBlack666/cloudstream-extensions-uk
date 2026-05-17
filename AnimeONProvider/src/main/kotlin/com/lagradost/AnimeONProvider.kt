@@ -208,7 +208,7 @@ class AnimeONProvider : MainAPI() {
             try {
                 val translations = Gson().fromJson(translationsJson, TranslationsResponse::class.java).translations
                 val episodeSources = mutableMapOf<Int, MutableList<EpisodeSource>>()
-                val episodePosters = mutableMapOf<Int, String?>() // прев'ю з Moon
+                val episodePosters = mutableMapOf<Int, String?>()
 
                 for (translation in translations) {
                     val translationId = translation.translation.id
@@ -245,7 +245,6 @@ class AnimeONProvider : MainAPI() {
 
                 episodeSources.keys.sorted().forEach { epNum ->
                     val sources = episodeSources[epNum] ?: return@forEach
-                    // Гібрид: спочатку Moon, потім Ashdi
                     var epPoster: String? = episodePosters[epNum]
 
                     if (epPoster.isNullOrEmpty()) {
@@ -258,33 +257,20 @@ class AnimeONProvider : MainAPI() {
                     }
 
                     val dataJson = Gson().toJson(sources)
-                    episodeSources.keys.sorted().forEach { epNum ->
-    val sources = episodeSources[epNum] ?: return@forEach
-    var epPoster: String? = episodePosters[epNum]
-    if (epPoster.isNullOrEmpty()) {
-        val ashdiSource = sources.firstOrNull {
-            it.playerName.contains("Ashdi", ignoreCase = true) && !it.videoUrl.isNullOrEmpty()
-        }
-        if (ashdiSource != null) {
-            epPoster = getAshdiPoster(ashdiSource.videoUrl!!)
-        }
-    }
-
-    val dataJson = Gson().toJson(sources)
-    episodes.add(newEpisode(dataJson) {
-        if (epNum == 0) {
-            this.name = "Спецепізод 1"
-            this.posterUrl = epPoster
-            this.episode = 1        // 0 → 1
-            this.data = dataJson
-        } else {
-            this.name = "Епізод $epNum"
-            this.posterUrl = epPoster
-            this.episode = epNum
-            this.data = dataJson
-        }
-    })
-                    }
+                    episodes.add(newEpisode(dataJson) {
+                        if (epNum == 0) {
+                            this.name = "Спецепізод 1"
+                            this.posterUrl = epPoster
+                            this.episode = 1        // 0 → 1
+                            this.data = dataJson
+                        } else {
+                            this.name = "Епізод $epNum"
+                            this.posterUrl = epPoster
+                            this.episode = epNum
+                            this.data = dataJson
+                        }
+                    })
+                }
             } catch (e: Exception) { }
         }
         return if (tvType == TvType.Anime || tvType == TvType.OVA) {
@@ -341,7 +327,6 @@ class AnimeONProvider : MainAPI() {
 
             try {
                 if (isAshdi) {
-                    // ВАЖЛИВО: для Ashdi спочатку videoUrl (надійніше), потім fileUrl
                     if (!videoUrl.isNullOrEmpty() && videoUrl.contains("ashdi.vip")) {
                         processAshdiIframe(videoUrl, sourceName, callback)
                         foundAny = true
@@ -354,7 +339,6 @@ class AnimeONProvider : MainAPI() {
                         foundAny = true
                     }
                 } else {
-                    // Для не-Ashdi (Moon) залишаємо без змін
                     if (!fileUrl.isNullOrEmpty()) {
                         M3u8Helper.generateM3u8(
                             source = sourceName,
