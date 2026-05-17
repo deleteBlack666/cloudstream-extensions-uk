@@ -258,21 +258,33 @@ class AnimeONProvider : MainAPI() {
                     }
 
                     val dataJson = Gson().toJson(sources)
-                    episodes.add(newEpisode(dataJson) {
-                        // Якщо це нульовий епізод, перейменовуємо його та ставимо номер 1
-                        if (epNum == 0) {
-                            this.name = "Спецепізод 1"
-                            this.posterUrl = epPoster
-                            this.episode = 1
-                            this.data = dataJson
-                        } else {
-                            this.name = "Епізод $epNum"
-                            this.posterUrl = epPoster
-                            this.episode = epNum
-                            this.data = dataJson
-                        }
-                    })
-                }
+                    episodeSources.keys.sorted().forEach { epNum ->
+    val sources = episodeSources[epNum] ?: return@forEach
+    var epPoster: String? = episodePosters[epNum]
+    if (epPoster.isNullOrEmpty()) {
+        val ashdiSource = sources.firstOrNull {
+            it.playerName.contains("Ashdi", ignoreCase = true) && !it.videoUrl.isNullOrEmpty()
+        }
+        if (ashdiSource != null) {
+            epPoster = getAshdiPoster(ashdiSource.videoUrl!!)
+        }
+    }
+
+    val dataJson = Gson().toJson(sources)
+    episodes.add(newEpisode(dataJson) {
+        if (epNum == 0) {
+            this.name = "Спецепізод 1"
+            this.posterUrl = epPoster
+            this.episode = 1        // 0 → 1
+            this.data = dataJson
+        } else {
+            this.name = "Епізод $epNum"
+            this.posterUrl = epPoster
+            this.episode = epNum
+            this.data = dataJson
+        }
+    })
+                    }
             } catch (e: Exception) { }
         }
         return if (tvType == TvType.Anime || tvType == TvType.OVA) {
