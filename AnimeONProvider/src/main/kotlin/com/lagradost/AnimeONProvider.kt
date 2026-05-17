@@ -261,7 +261,7 @@ class AnimeONProvider : MainAPI() {
                         if (epNum == 0) {
                             this.name = "Спецепізод 1"
                             this.posterUrl = epPoster
-                            this.episode = 1        // 0 → 1
+                            this.episode = null        // 0 → 1
                             this.data = dataJson
                         } else {
                             this.name = "Епізод $epNum"
