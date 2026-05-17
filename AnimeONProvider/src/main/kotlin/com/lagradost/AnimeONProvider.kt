@@ -267,7 +267,9 @@ class AnimeONProvider : MainAPI() {
                 }
             } catch (e: Exception) { }
         }
-        return if (tvType == TvType.Anime || tvType == TvType.OVA) {
+
+        // Будуємо фінальну відповідь
+        val loadResponse = if (tvType == TvType.Anime || tvType == TvType.OVA) {
             newAnimeLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType) {
                 this.posterUrl = posterUrl
                 this.engName = animeJSON.titleEn
@@ -278,7 +280,7 @@ class AnimeONProvider : MainAPI() {
                 this.duration = extractIntFromString(animeJSON.episodeTime)
                 this.year = animeJSON.releaseDate?.toIntOrNull()
                 this.score = Score.from10(animeJSON.rating)
-                addEpisodes(DubStatus.Dubbed, episodes)
+                addEpisodes(DubStatus.Dubbed, episodes.filter { it.episode != 0 }) // основні серії без 0
                 addMalId(animeJSON.malId.toIntOrNull())
             }
         } else {
@@ -292,9 +294,18 @@ class AnimeONProvider : MainAPI() {
                 this.year = animeJSON.releaseDate?.toIntOrNull()
                 this.backgroundPosterUrl = backgroundImage
                 this.score = Score.from10(animeJSON.rating)
+                addEpisodes(DubStatus.Dubbed, episodes.filter { it.episode != 0 })
                 addMalId(animeJSON.malId.toIntOrNull())
             }
         }
+
+        // Додаємо 0-й епізод окремо, щоб CloudStream його не ігнорував
+        val ep0 = episodes.firstOrNull { it.episode == 0 }
+        if (ep0 != null) {
+            loadResponse.addEpisode(ep0)
+        }
+
+        return loadResponse
     }
 
     override suspend fun loadLinks(
