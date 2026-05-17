@@ -70,7 +70,7 @@ class AnimeONProvider : MainAPI() {
     }
 
     private suspend fun resolveAnimeApiUrl(animeId: Int): String {
-        val initial = fetchJsonOrNull("$apiUrl/$animeId") ?: return "$apiUrl/$animeId"
+        val initial = fetchJsonOrNull("$apiUrl/$animeId") ?: return "$apiUrl/$apiUrl/$animeId"
         return try {
             val redirect = Gson().fromJson(initial, RedirectResponse::class.java)
             if (redirect?.moved == true && !redirect.slug.isNullOrEmpty()) {
@@ -356,14 +356,15 @@ class AnimeONProvider : MainAPI() {
             )
         )
         if (streams.isEmpty()) {
+            // Передаємо аргументи позиційно, щоб уникнути помилок з іменами параметрів
             callback(
                 newExtractorLink(
-                    source = sourceName,
-                    name = sourceName,
-                    url = url,
-                    referer = referer,
-                    quality = Qualities.Unknown.value,
-                    isM3u8 = true
+                    sourceName,
+                    sourceName,
+                    url,
+                    referer,
+                    Qualities.Unknown.value,
+                    true
                 )
             )
         } else {
@@ -449,4 +450,3 @@ class AnimeONProvider : MainAPI() {
         return value.value.toIntOrNull()
     }
 }
- 
