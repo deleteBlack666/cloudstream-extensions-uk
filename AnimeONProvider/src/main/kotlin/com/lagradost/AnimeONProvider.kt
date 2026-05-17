@@ -259,9 +259,9 @@ class AnimeONProvider : MainAPI() {
                     val dataJson = Gson().toJson(sources)
                     episodes.add(newEpisode(dataJson) {
                         if (epNum == 0) {
-                            this.name = "Спецепізод 1"
+                            this.name = "Спецвипуск"
                             this.posterUrl = epPoster
-                            this.episode = null        // 0 → 1
+                            this.episode = null     // замість 0 → null, щоб CloudStream не фільтрував
                             this.data = dataJson
                         } else {
                             this.name = "Епізод $epNum"
