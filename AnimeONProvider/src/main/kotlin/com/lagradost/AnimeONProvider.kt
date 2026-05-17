@@ -231,15 +231,15 @@ class AnimeONProvider : MainAPI() {
                                     fileUrl = ep.fileUrl,
                                 )
                             )
-                            // Зберігаємо прев'ю з Moon (якщо API його дає)
-                            if (player.name.contains("Moon", ignoreCase = true) && !ep.poster.isNullOrEmpty()) {
-                                if (!episodePosters.containsKey(ep.episode)) {
-                                    episodePosters[ep.episode] = ep.poster
-                                }
-                            }
-                        }
-                    }
-                }
+                            // Зберігаємо прев'ю з Moon (якщо воно не з недоступного домену)
+if (player.name.contains("Moon", ignoreCase = true) && !ep.poster.isNullOrEmpty()) {
+    // Ігноруємо mooncdn.net – він часто недоступний
+    if (!ep.poster.contains("mooncdn.net")) {
+        if (!episodePosters.containsKey(ep.episode)) {
+            episodePosters[ep.episode] = ep.poster
+        }
+    }
+}
 
                 episodeSources.keys.sorted().forEach { epNum ->
                     val sources = episodeSources[epNum] ?: return@forEach
