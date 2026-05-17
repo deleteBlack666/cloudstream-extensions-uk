@@ -243,10 +243,10 @@ class AnimeONProvider : MainAPI() {
 
                     val dataJson = Gson().toJson(sources)
                     episodes.add(newEpisode(dataJson) {
-                        this.name = "Епізод $epNum" // Для 0 епізоду буде "Епізод 0"
+                        this.name = "Епізод $epNum" 
                         this.posterUrl = epPoster
                         this.episode = epNum 
-                        this.season = 1 // Обов'язково 1 сезон, щоб "0 епізод" не сховався
+                        this.season = 1 
                         this.data = dataJson
                     })
                 }
@@ -345,7 +345,6 @@ class AnimeONProvider : MainAPI() {
         return foundAny
     }
 
-    // Безпечний виклик парсера m3u8 (більше не дропаємо лінки сліпо)
     private suspend fun processM3u8Safely(sourceName: String, url: String, referer: String, callback: (ExtractorLink) -> Unit) {
         val streams = M3u8Helper.generateM3u8(
             source = sourceName,
@@ -357,9 +356,8 @@ class AnimeONProvider : MainAPI() {
             )
         )
         if (streams.isEmpty()) {
-            // Запасний варіант, якщо Cloudstream не зміг витягнути якості - передаємо напряму
             callback(
-                ExtractorLink(
+                newExtractorLink(
                     source = sourceName,
                     name = sourceName,
                     url = url,
@@ -387,7 +385,6 @@ class AnimeONProvider : MainAPI() {
                 "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"
             )).text
 
-            // Використовуємо Regex замість indexOf для більшої надійності
             val fileRegex = Regex("""file\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]""")
             val m3u8 = fileRegex.find(html)?.groupValues?.get(1)
 
@@ -452,3 +449,4 @@ class AnimeONProvider : MainAPI() {
         return value.value.toIntOrNull()
     }
 }
+ 
