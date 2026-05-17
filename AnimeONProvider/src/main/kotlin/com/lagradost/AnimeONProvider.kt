@@ -223,30 +223,43 @@ class AnimeONProvider : MainAPI() {
                             if (eps.size < 100) break
                         }
                         for (ep in collected) {
-                            episodeSources.keys.sorted().forEach { epNum ->
-    val sources = episodeSources[epNum] ?: return@forEach
-    var epPoster: String? = episodePosters[epNum]
-    if (epPoster.isNullOrEmpty()) {
-        val ashdiSource = sources.firstOrNull {
-            it.playerName.contains("Ashdi", ignoreCase = true) && !it.videoUrl.isNullOrEmpty()
-        }
-        if (ashdiSource != null) {
-            epPoster = getAshdiPoster(ashdiSource.videoUrl!!)
-        }
-    }
-
-    val dataJson = Gson().toJson(sources)
-    episodes.add(newEpisode(dataJson) {
-        this.name = if (epNum == 0) "Епізод 0" else "Епізод $epNum"
-        this.posterUrl = epPoster
-        this.episode = epNum   // <-- для 0 залишається 0
-        this.data = dataJson
-    })
+                            episodeSources.getOrPut(ep.episode) { mutableListOf() }.add(
+                                EpisodeSource(
+                                    translationName = translation.translation.name,
+                                    playerName = player.name,
+                                    videoUrl = ep.videoUrl,
+                                    fileUrl = ep.fileUrl,
+                                )
+                            )
+                            // Зберігаємо прев'ю з Moon, якщо воно не з недоступного домену mooncdn.net
+                            if (player.name.contains("Moon", ignoreCase = true) && !ep.poster.isNullOrEmpty()) {
+                                if (!ep.poster.contains("mooncdn.net")) {
+                                    if (!episodePosters.containsKey(ep.episode)) {
+                                        episodePosters[ep.episode] = ep.poster
+                                    }
+                                }
                             }
+                        }
+                    }
+                }
+
+                episodeSources.keys.sorted().forEach { epNum ->
+                    val sources = episodeSources[epNum] ?: return@forEach
+                    // Гібрид: спочатку Moon, потім Ashdi
+                    var epPoster: String? = episodePosters[epNum]
+
+                    if (epPoster.isNullOrEmpty()) {
+                        val ashdiSource = sources.firstOrNull {
+                            it.playerName.contains("Ashdi", ignoreCase = true) && !it.videoUrl.isNullOrEmpty()
+                        }
+                        if (ashdiSource != null) {
+                            epPoster = getAshdiPoster(ashdiSource.videoUrl!!)
+                        }
+                    }
 
                     val dataJson = Gson().toJson(sources)
                     episodes.add(newEpisode(dataJson) {
-                        this.name = "Епізод $epNum"
+                        this.name = if (epNum == 0) "Епізод 0" else "Епізод $epNum"
                         this.posterUrl = epPoster
                         this.episode = epNum
                         this.data = dataJson
