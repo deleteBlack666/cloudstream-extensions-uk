@@ -86,18 +86,34 @@ class AnimeONProvider : MainAPI() {
     }
 
     private suspend fun getAshdiPoster(videoUrl: String?): String? {
-        if (videoUrl.isNullOrEmpty()) return null
-        if (!videoUrl.contains("ashdi.vip")) return null
-        val url = if (videoUrl.contains("?")) videoUrl else "$videoUrl?player=animeon.club"
-        return try {
-            val html = app.get(url, headers = mapOf(
-                "User-Agent" to userAgent,
-                "Referer" to "$mainUrl/"
-            )).text
-            val posterRegex = Regex("""poster:\s*["'](https?://[^"']+)["']""")
-            val match = posterRegex.find(html)?.groupValues?.get(1) ?: return null
-            "https://" + match.removePrefix("http://").removePrefix("https://")
-        } catch (e: Exception) { null }
+    if (videoUrl.isNullOrEmpty()) return null
+    if (!videoUrl.contains("ashdi.vip")) return null
+    val url = if (videoUrl.contains("?")) videoUrl else "$videoUrl?player=animeon.club"
+    return try {
+        val html = app.get(url, headers = mapOf(
+            "User-Agent" to userAgent,
+            "Referer" to "$mainUrl/"
+        )).text
+
+        // Шукаємо poster:'...' або poster:"..."
+        for (quote in listOf("'", "\"")) {
+            val prefix = "poster:$quote"
+            val idx = html.indexOf(prefix)
+            if (idx != -1) {
+                val start = idx + prefix.length
+                val end = html.indexOf(quote, start)
+                if (end != -1) {
+                    val raw = html.substring(start, end)
+                    if (raw.isNotEmpty()) {
+                        // Робимо посилання абсолютним, якщо воно відносне
+                        return if (raw.startsWith("http")) raw
+                        else "https:$raw"
+                    }
+                }
+            }
+        }
+        null
+    } catch (e: Exception) { null }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
