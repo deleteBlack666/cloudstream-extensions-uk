@@ -244,33 +244,34 @@ class AnimeONProvider : MainAPI() {
                 }
 
                 episodeSources.keys.sorted().forEach { epNum ->
-                    val sources = episodeSources[epNum] ?: return@forEach
-                    var epPoster: String? = episodePosters[epNum]
+    val sources = episodeSources[epNum] ?: return@forEach
+    var epPoster: String? = episodePosters[epNum]
 
-                    if (epPoster.isNullOrEmpty()) {
-                        val ashdiSource = sources.firstOrNull {
-                            it.playerName.contains("Ashdi", ignoreCase = true) && !it.videoUrl.isNullOrEmpty()
-                        }
-                        if (ashdiSource != null) {
-                            epPoster = getAshdiPoster(ashdiSource.videoUrl!!)
-                        }
-                    }
+    if (epPoster.isNullOrEmpty()) {
+        val ashdiSource = sources.firstOrNull {
+            it.playerName.contains("Ashdi", ignoreCase = true) && !it.videoUrl.isNullOrEmpty()
+        }
+        if (ashdiSource != null) {
+            epPoster = getAshdiPoster(ashdiSource.videoUrl!!)
+        }
+    }
 
-                    val dataJson = Gson().toJson(sources)
-                    episodes.add(newEpisode(dataJson) {
-                        if (epNum == 0) {
-                            this.name = "Спецвипуск"
-                            this.posterUrl = epPoster
-                            this.episode = null     // замість 0 → null, щоб CloudStream не фільтрував
-                            this.data = dataJson
-                        } else {
-                            this.name = "Епізод $epNum"
-                            this.posterUrl = epPoster
-                            this.episode = epNum
-                            this.data = dataJson
-                        }
-                    })
+    val dataJson = Gson().toJson(sources)
+    episodes.add(newEpisode(dataJson) {
+        if (epNum == 0) {
+            this.name = "Спецвипуск 1"
+            this.posterUrl = epPoster
+            this.episode = 1        // Показуємо як перший епізод
+            this.data = dataJson
+        } else {
+            this.name = "Епізод ${epNum + 1}"  // Зсуваємо номер на +1 для всіх інших
+            this.posterUrl = epPoster
+            this.episode = epNum + 1
+            this.data = dataJson
+        }
+    })
                 }
+                
             } catch (e: Exception) { }
         }
         return if (tvType == TvType.Anime || tvType == TvType.OVA) {
