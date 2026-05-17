@@ -265,47 +265,41 @@ class AnimeONProvider : MainAPI() {
                         this.data = dataJson
                     })
                 }
-            } catch (e: Exception) { }
-        }
+                    } catch (e: Exception) { }
+    }
 
-        // Будуємо фінальну відповідь
-        val loadResponse = if (tvType == TvType.Anime || tvType == TvType.OVA) {
-            newAnimeLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType) {
-                this.posterUrl = posterUrl
-                this.engName = animeJSON.titleEn
-                this.tags = genres
-                this.plot = animeJSON.description
-                addTrailer(animeJSON.trailer)
-                this.showStatus = showStatus
-                this.duration = extractIntFromString(animeJSON.episodeTime)
-                this.year = animeJSON.releaseDate?.toIntOrNull()
-                this.score = Score.from10(animeJSON.rating)
-                addEpisodes(DubStatus.Dubbed, episodes.filter { it.episode != 0 }) // основні серії без 0
-                addMalId(animeJSON.malId.toIntOrNull())
-            }
-        } else {
-            val backgroundImage = if (animeJSON.backgroundImage.isNullOrBlank()) posterUrl else animeJSON.backgroundImage
-            newMovieLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType, "$animeId") {
-                this.posterUrl = posterUrl
-                this.tags = genres
-                this.plot = animeJSON.description
-                addTrailer(animeJSON.trailer)
-                this.duration = extractIntFromString(animeJSON.episodeTime)
-                this.year = animeJSON.releaseDate?.toIntOrNull()
-                this.backgroundPosterUrl = backgroundImage
-                this.score = Score.from10(animeJSON.rating)
-                addEpisodes(DubStatus.Dubbed, episodes.filter { it.episode != 0 })
-                addMalId(animeJSON.malId.toIntOrNull())
-            }
+    // Створюємо фінальну відповідь
+    val loadResponse = if (tvType == TvType.Anime || tvType == TvType.OVA) {
+        newAnimeLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType) {
+            this.posterUrl = posterUrl
+            this.engName = animeJSON.titleEn
+            this.tags = genres
+            this.plot = animeJSON.description
+            addTrailer(animeJSON.trailer)
+            this.showStatus = showStatus
+            this.duration = extractIntFromString(animeJSON.episodeTime)
+            this.year = animeJSON.releaseDate?.toIntOrNull()
+            this.score = Score.from10(animeJSON.rating)
+            addMalId(animeJSON.malId.toIntOrNull())
+            // Додаємо всі епізоди разом (включаючи 0) одним викликом
+            addEpisodes(DubStatus.Dubbed, episodes)
         }
-
-        // Додаємо 0-й епізод окремо, щоб CloudStream його не ігнорував
-        val ep0 = episodes.firstOrNull { it.episode == 0 }
-        if (ep0 != null) {
-            loadResponse.addEpisode(ep0)
+    } else {
+        val backgroundImage = if (animeJSON.backgroundImage.isNullOrBlank()) posterUrl else animeJSON.backgroundImage
+        newMovieLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType, "$animeId") {
+            this.posterUrl = posterUrl
+            this.tags = genres
+            this.plot = animeJSON.description
+            addTrailer(animeJSON.trailer)
+            this.duration = extractIntFromString(animeJSON.episodeTime)
+            this.year = animeJSON.releaseDate?.toIntOrNull()
+            this.backgroundPosterUrl = backgroundImage
+            this.score = Score.from10(animeJSON.rating)
+            addMalId(animeJSON.malId.toIntOrNull())
         }
+    }
 
-        return loadResponse
+    return loadResponse
     }
 
     override suspend fun loadLinks(
