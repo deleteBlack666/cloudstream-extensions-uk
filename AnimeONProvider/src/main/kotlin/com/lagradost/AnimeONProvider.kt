@@ -259,47 +259,50 @@ class AnimeONProvider : MainAPI() {
 
                     val dataJson = Gson().toJson(sources)
                     episodes.add(newEpisode(dataJson) {
-                        this.name = if (epNum == 0) "Епізод 0" else "Епізод $epNum"
-                        this.posterUrl = epPoster
-                        this.episode = epNum
-                        this.data = dataJson
+                        // Якщо це нульовий епізод, перейменовуємо його та ставимо номер 1
+                        if (epNum == 0) {
+                            this.name = "Спецепізод 1"
+                            this.posterUrl = epPoster
+                            this.episode = 1
+                            this.data = dataJson
+                        } else {
+                            this.name = "Епізод $epNum"
+                            this.posterUrl = epPoster
+                            this.episode = epNum
+                            this.data = dataJson
+                        }
                     })
                 }
-                    } catch (e: Exception) { }
-    }
-
-    // Створюємо фінальну відповідь
-    val loadResponse = if (tvType == TvType.Anime || tvType == TvType.OVA) {
-        newAnimeLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType) {
-            this.posterUrl = posterUrl
-            this.engName = animeJSON.titleEn
-            this.tags = genres
-            this.plot = animeJSON.description
-            addTrailer(animeJSON.trailer)
-            this.showStatus = showStatus
-            this.duration = extractIntFromString(animeJSON.episodeTime)
-            this.year = animeJSON.releaseDate?.toIntOrNull()
-            this.score = Score.from10(animeJSON.rating)
-            addMalId(animeJSON.malId.toIntOrNull())
-            // Додаємо всі епізоди разом (включаючи 0) одним викликом
-            addEpisodes(DubStatus.Dubbed, episodes)
+            } catch (e: Exception) { }
         }
-    } else {
-        val backgroundImage = if (animeJSON.backgroundImage.isNullOrBlank()) posterUrl else animeJSON.backgroundImage
-        newMovieLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType, "$animeId") {
-            this.posterUrl = posterUrl
-            this.tags = genres
-            this.plot = animeJSON.description
-            addTrailer(animeJSON.trailer)
-            this.duration = extractIntFromString(animeJSON.episodeTime)
-            this.year = animeJSON.releaseDate?.toIntOrNull()
-            this.backgroundPosterUrl = backgroundImage
-            this.score = Score.from10(animeJSON.rating)
-            addMalId(animeJSON.malId.toIntOrNull())
+        return if (tvType == TvType.Anime || tvType == TvType.OVA) {
+            newAnimeLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType) {
+                this.posterUrl = posterUrl
+                this.engName = animeJSON.titleEn
+                this.tags = genres
+                this.plot = animeJSON.description
+                addTrailer(animeJSON.trailer)
+                this.showStatus = showStatus
+                this.duration = extractIntFromString(animeJSON.episodeTime)
+                this.year = animeJSON.releaseDate?.toIntOrNull()
+                this.score = Score.from10(animeJSON.rating)
+                addEpisodes(DubStatus.Dubbed, episodes)
+                addMalId(animeJSON.malId.toIntOrNull())
+            }
+        } else {
+            val backgroundImage = if (animeJSON.backgroundImage.isNullOrBlank()) posterUrl else animeJSON.backgroundImage
+            newMovieLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType, "$animeId") {
+                this.posterUrl = posterUrl
+                this.tags = genres
+                this.plot = animeJSON.description
+                addTrailer(animeJSON.trailer)
+                this.duration = extractIntFromString(animeJSON.episodeTime)
+                this.year = animeJSON.releaseDate?.toIntOrNull()
+                this.backgroundPosterUrl = backgroundImage
+                this.score = Score.from10(animeJSON.rating)
+                addMalId(animeJSON.malId.toIntOrNull())
+            }
         }
-    }
-
-    return loadResponse
     }
 
     override suspend fun loadLinks(
