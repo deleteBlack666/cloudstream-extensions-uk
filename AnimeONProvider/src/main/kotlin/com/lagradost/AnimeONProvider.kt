@@ -222,24 +222,26 @@ class AnimeONProvider : MainAPI() {
                             collected.addAll(eps)
                             if (eps.size < 100) break
                         }
-                    for (ep in collected) {
-    episodeSources.getOrPut(ep.episode) { mutableListOf() }.add(
-        EpisodeSource(
-            translationName = translation.translation.name,
-            playerName = player.name,
-            videoUrl = ep.videoUrl,
-            fileUrl = ep.fileUrl,
-        )
-    )
-    // Зберігаємо прев'ю з Moon (якщо воно не з недоступного домену)
-    if (player.name.contains("Moon", ignoreCase = true) && !ep.poster.isNullOrEmpty()) {
-        if (!ep.poster.contains("mooncdn.net")) {
-            if (!episodePosters.containsKey(ep.episode)) {
-                episodePosters[ep.episode] = ep.poster
-            }
-        }
-    }
+                        for (ep in collected) {
+                            episodeSources.getOrPut(ep.episode) { mutableListOf() }.add(
+                                EpisodeSource(
+                                    translationName = translation.translation.name,
+                                    playerName = player.name,
+                                    videoUrl = ep.videoUrl,
+                                    fileUrl = ep.fileUrl,
+                                )
+                            )
+                            // Зберігаємо прев'ю з Moon, якщо воно не з недоступного домену mooncdn.net
+                            if (player.name.contains("Moon", ignoreCase = true) && !ep.poster.isNullOrEmpty()) {
+                                if (!ep.poster.contains("mooncdn.net")) {
+                                    if (!episodePosters.containsKey(ep.episode)) {
+                                        episodePosters[ep.episode] = ep.poster
+                                    }
+                                }
+                            }
+                        }
                     }
+                }
 
                 episodeSources.keys.sorted().forEach { epNum ->
                     val sources = episodeSources[epNum] ?: return@forEach
@@ -476,4 +478,4 @@ class AnimeONProvider : MainAPI() {
         if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
         return value.value.toIntOrNull()
     }
-}
+} 
