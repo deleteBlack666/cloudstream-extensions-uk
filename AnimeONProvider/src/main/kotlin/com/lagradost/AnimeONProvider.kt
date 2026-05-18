@@ -233,7 +233,7 @@ class AnimeONProvider : MainAPI() {
                                     fileUrl = ep.fileUrl,
                                 )
                             )
-                            // Зберігаємо прев'ю з Moon, якщо воно доступне без Referer
+                            // Зберігаємо Moon постер як fallback (окремо)
                             // rh_mvo_ та rh_sub_ потребують Referer який CS3 не надсилає
                             if (player.name.contains("Moon", ignoreCase = true) && !ep.poster.isNullOrEmpty()) {
                                 val restricted = ep.poster.contains("mooncdn.net") ||
@@ -248,13 +248,16 @@ class AnimeONProvider : MainAPI() {
 
                 episodeSources.keys.sorted().forEach { epNum ->
                     val sources = episodeSources[epNum] ?: return@forEach
-                    var epPoster: String? = episodePosters[epNum]
 
+                    // Ashdi першим
+                    val ashdiSource = sources.firstOrNull {
+                        it.playerName.contains("Ashdi", ignoreCase = true) && !it.videoUrl.isNullOrEmpty()
+                    }
+                    var epPoster: String? = if (ashdiSource != null) getAshdiPoster(ashdiSource.videoUrl!!) else null
+
+                    // Moon як fallback якщо Ashdi не дав постер
                     if (epPoster.isNullOrEmpty()) {
-                        val ashdiSource = sources.firstOrNull {
-                            it.playerName.contains("Ashdi", ignoreCase = true) && !it.videoUrl.isNullOrEmpty()
-                        }
-                        if (ashdiSource != null) epPoster = getAshdiPoster(ashdiSource.videoUrl!!)
+                        epPoster = episodePosters[epNum]
                     }
 
                     val dataJson = Gson().toJson(sources)
