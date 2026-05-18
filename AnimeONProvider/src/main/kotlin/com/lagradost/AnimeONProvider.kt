@@ -215,13 +215,11 @@ class AnimeONProvider : MainAPI() {
                     for (player in translation.player) {
                         val collected = mutableListOf<FundubEpisode>()
                         val seenIds = mutableSetOf<Int>()
-                        // Починаємо з -1 щоб отримати episode 0, далі звичайна пагінація
                         for (offset in listOf(-1) + (0..11000 step 100).toList()) {
                             val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
                             val epJson = fetchJsonOrNull(epUrl) ?: break
                             val eps = try { Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes } catch (e: Exception) { null }
                             if (eps.isNullOrEmpty()) break
-                            // Дедуплікація по id щоб уникнути дублів між skip=-1 і skip=0
                             val newEps = eps.filter { seenIds.add(it.id) }
                             collected.addAll(newEps)
                             if (eps.size < 100) break
@@ -235,12 +233,13 @@ class AnimeONProvider : MainAPI() {
                                     fileUrl = ep.fileUrl,
                                 )
                             )
-                            // Зберігаємо прев'ю з Moon, якщо воно не з недоступного домену mooncdn.net
+                            // Зберігаємо прев'ю з Moon, якщо воно доступне без Referer
+                            // rh_mvo_ та rh_sub_ потребують Referer який CS3 не надсилає
                             if (player.name.contains("Moon", ignoreCase = true) && !ep.poster.isNullOrEmpty()) {
-                                if (!ep.poster.contains("mooncdn.net")) {
-                                    if (!episodePosters.containsKey(ep.episode)) {
-                                        episodePosters[ep.episode] = ep.poster
-                                    }
+                                val restricted = ep.poster.contains("mooncdn.net") ||
+                                        Regex("/rh_[a-z]+_").containsMatchIn(ep.poster)
+                                if (!restricted && !episodePosters.containsKey(ep.episode)) {
+                                    episodePosters[ep.episode] = ep.poster
                                 }
                             }
                         }
@@ -255,9 +254,7 @@ class AnimeONProvider : MainAPI() {
                         val ashdiSource = sources.firstOrNull {
                             it.playerName.contains("Ashdi", ignoreCase = true) && !it.videoUrl.isNullOrEmpty()
                         }
-                        if (ashdiSource != null) {
-                            epPoster = getAshdiPoster(ashdiSource.videoUrl!!)
-                        }
+                        if (ashdiSource != null) epPoster = getAshdiPoster(ashdiSource.videoUrl!!)
                     }
 
                     val dataJson = Gson().toJson(sources)
@@ -484,4 +481,3 @@ class AnimeONProvider : MainAPI() {
         return value.value.toIntOrNull()
     }
 }
- 
