@@ -203,12 +203,14 @@ class AnimeONProvider : MainAPI() {
                     val translationId = translation.translation.id
                     for (player in translation.player) {
                         val collected = mutableListOf<FundubEpisode>()
-                        for (offset in 0..11000 step 100) {
+                        val seenIds = mutableSetOf<Int>()
+                        for (offset in listOf(-1) + (0..11000 step 100).toList()) {
                             val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
                             val epJson = fetchJsonOrNull(epUrl) ?: break
                             val eps = try { Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes } catch (e: Exception) { null }
                             if (eps.isNullOrEmpty()) break
-                            collected.addAll(eps)
+                            val newEps = eps.filter { seenIds.add(it.id) }
+                            collected.addAll(newEps)
                             if (eps.size < 100) break
                         }
                         for (ep in collected) {
@@ -243,14 +245,7 @@ class AnimeONProvider : MainAPI() {
 
                     val dataJson = Gson().toJson(sources)
                     episodes.add(newEpisode(dataJson) {
-                        // Епізод 0: episode=null щоб CloudStream не фільтрував,
-                        // назва явно вказує "Спецвипуск (Епізод 0)"
-                        if (epNum == 0) {
-                            this.name = "Спецвипуск (Епізод 0)"
-                            this.episode = null
-                        } else {
-                            this.episode = epNum
-                        }
+                        this.episode = epNum
                         this.posterUrl = epPoster
                         this.data = dataJson
                     })
