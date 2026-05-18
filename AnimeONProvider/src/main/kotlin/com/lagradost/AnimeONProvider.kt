@@ -243,19 +243,32 @@ class AnimeONProvider : MainAPI() {
                     }
                 }
 
-                episodeSources.keys.sorted().forEach { epNum ->
-                    val sources = episodeSources[epNum] ?: return@forEach
-                    // Гібрид: спочатку Moon, потім Ashdi
-                    var epPoster: String? = episodePosters[epNum]
+                println("[DEBUG] episodeSources keys: ${episodeSources.keys.sorted()}")
 
-                    if (epPoster.isNullOrEmpty()) {
-                        val ashdiSource = sources.firstOrNull {
-                            it.playerName.contains("Ashdi", ignoreCase = true) && !it.videoUrl.isNullOrEmpty()
-                        }
-                        if (ashdiSource != null) {
-                            epPoster = getAshdiPoster(ashdiSource.videoUrl!!)
-                        }
-                    }
+episodeSources.keys.sorted().forEach { epNum ->
+    val sources = episodeSources[epNum] ?: return@forEach
+    var epPoster: String? = episodePosters[epNum]
+
+    if (epPoster.isNullOrEmpty()) {
+        val ashdiSource = sources.firstOrNull {
+            it.playerName.contains("Ashdi", ignoreCase = true) && !it.videoUrl.isNullOrEmpty()
+        }
+        if (ashdiSource != null) {
+            epPoster = getAshdiPoster(ashdiSource.videoUrl!!)
+        }
+    }
+
+    val dataJson = Gson().toJson(sources)
+    println("[DEBUG] Adding episode: num=$epNum, sources=${sources.size}, dataJson=${dataJson.take(200)}")
+
+    episodes.add(newEpisode(dataJson) {
+        this.name = "Епізод $epNum"
+        this.posterUrl = epPoster
+        this.episode = epNum
+        this.data = dataJson
+    })
+}
+println("[DEBUG] Total episodes added: ${episodes.size}")
 
                     val dataJson = Gson().toJson(sources)
                     episodes.add(newEpisode(dataJson) {
