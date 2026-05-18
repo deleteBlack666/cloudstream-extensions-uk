@@ -484,3 +484,4 @@ class AnimeONProvider : MainAPI() {
         return value.value.toIntOrNull()
     }
 }
+ 
