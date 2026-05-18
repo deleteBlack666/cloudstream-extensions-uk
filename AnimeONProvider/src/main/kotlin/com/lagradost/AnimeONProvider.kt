@@ -214,26 +214,28 @@ class AnimeONProvider : MainAPI() {
                     val translationId = translation.translation.id
                     for (player in translation.player) {
                         val collected = mutableListOf<FundubEpisode>()
-val seenIds = mutableSetOf<Int>()
+                        val seenIds = mutableSetOf<Int>()
 
-val zeroUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
-val zeroJson = fetchJsonOrNull(zeroUrl)
-val zeroEps = if (zeroJson != null) try { Gson().fromJson(zeroJson, PlayerEpisodes::class.java).episodes } catch (e: Exception) { null } else null
-val hasEpisodeZero = zeroEps?.any { it.episode == 0 } == true
-if (hasEpisodeZero && zeroEps != null) {
-    val ep0 = zeroEps.filter { it.episode == 0 && seenIds.add(it.id) }
-    collected.addAll(ep0)
-}
+                        // Спочатку перевіряємо skip=-1 для episode 0
+                        val zeroUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=-1&playerId=${player.id}&translationId=$translationId"
+                        val zeroJson = fetchJsonOrNull(zeroUrl)
+                        val zeroEps = if (zeroJson != null) try { Gson().fromJson(zeroJson, PlayerEpisodes::class.java).episodes } catch (e: Exception) { null } else null
+                        val hasEpisodeZero = zeroEps?.any { it.episode == 0 } == true
+                        if (hasEpisodeZero && zeroEps != null) {
+                            val ep0 = zeroEps.filter { it.episode == 0 && seenIds.add(it.id) }
+                            collected.addAll(ep0)
+                        }
 
-for (offset in 0..11000 step 100) {
-    val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
-    val epJson = fetchJsonOrNull(epUrl) ?: break
-    val eps = try { Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes } catch (e: Exception) { null }
-    if (eps.isNullOrEmpty()) break
-    val newEps = eps.filter { seenIds.add(it.id) }
-    collected.addAll(newEps)
-    if (eps.size < 100) break
-}
+                        // Звичайна пагінація з skip=0
+                        for (offset in 0..11000 step 100) {
+                            val epUrl = "$mainUrl/api/player/$animeId/episodes?take=100&skip=$offset&playerId=${player.id}&translationId=$translationId"
+                            val epJson = fetchJsonOrNull(epUrl) ?: break
+                            val eps = try { Gson().fromJson(epJson, PlayerEpisodes::class.java).episodes } catch (e: Exception) { null }
+                            if (eps.isNullOrEmpty()) break
+                            val newEps = eps.filter { seenIds.add(it.id) }
+                            collected.addAll(newEps)
+                            if (eps.size < 100) break
+                        }
                         for (ep in collected) {
                             episodeSources.getOrPut(ep.episode) { mutableListOf() }.add(
                                 EpisodeSource(
@@ -257,15 +259,15 @@ for (offset in 0..11000 step 100) {
 
                 episodeSources.keys.sorted().forEach { epNum ->
                     val sources = episodeSources[epNum] ?: return@forEach
+                    // Якщо є хоч один Moon постер — Ashdi не чіпаємо взагалі
+                    val hasMoonPosters = episodePosters.values.any { !it.isNullOrEmpty() }
                     var epPoster: String? = episodePosters[epNum]
 
-                    if (epPoster.isNullOrEmpty()) {
+                    if (epPoster.isNullOrEmpty() && !hasMoonPosters) {
                         val ashdiSource = sources.firstOrNull {
                             it.playerName.contains("Ashdi", ignoreCase = true) && !it.videoUrl.isNullOrEmpty()
                         }
-                        if (ashdiSource != null) {
-                            epPoster = getAshdiPoster(ashdiSource.videoUrl!!)
-                        }
+                        if (ashdiSource != null) epPoster = getAshdiPoster(ashdiSource.videoUrl!!)
                     }
 
                     val dataJson = Gson().toJson(sources)
