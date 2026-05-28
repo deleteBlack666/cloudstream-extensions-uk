@@ -1,0 +1,22 @@
+name: Auto Clean Actions History
+
+on:
+  schedule:
+    # Запускається щонеділі о 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch: # Додає кнопку для запуску вручную
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Delete old runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0 # Видалить абсолютно всі рани. Поставте наприклад 7, щоб лишити історію за останній тиждень.
+          keep_minimum_runs: 0 # Скільки найновіших ранів обов'язково залишити
+          
