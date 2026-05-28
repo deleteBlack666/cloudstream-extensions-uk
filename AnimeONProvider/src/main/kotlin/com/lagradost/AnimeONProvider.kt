@@ -716,29 +716,26 @@ class AnimeONProvider : MainAPI() {
 }
 
 /**
- * Перетворює "[720p]url1,[1080p]url2" на чисте посилання найкращої якості.
- */
-private fun extractBestVideoUrl(decodedString: String): String {
-    if (decodedString.isBlank() || !decodedString.startsWith("[")) {
-        return decodedString // Якщо це вже чисте посилання
+     * Перетворює "[720p]url1,[1080p]url2" на чисте посилання найкращої якості.
+     */
+    private fun extractBestVideoUrl(decodedString: String): String {
+        if (decodedString.isBlank() || !decodedString.startsWith("[")) {
+            return decodedString // Якщо це вже чисте посилання
+        }
+        
+        val urls = decodedString.split(",").mapNotNull { part ->
+            // Забираємо "[якість]" і залишаємо тільки URL
+            val match = Regex("""\[[^\]]+\](.+)""").find(part.trim())
+            match?.groupValues?.get(1)?.trim()
+        }
+        
+        // Беремо останнє посилання (зазвичай це максимальна якість, наприклад 1080p)
+        return urls.lastOrNull() ?: decodedString
     }
-    
-    val urls = decodedString.split(",").mapNotNull { part ->
-        // Забираємо "[якість]" і залишаємо тільки URL
-        val match = Regex("""\[[^\]]+\](.+)""").find(part.trim())
-        match?.groupValues?.get(1)?.trim()
-    }
-    
-    // Беремо останнє посилання (зазвичай це максимальна якість, наприклад 1080p)
-    return urls.lastOrNull() ?: decodedString
-}
-} 
 
-    return ""
+    private fun extractIntFromString(string: String): Int? {
+        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
+        if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
+        return value.value.toIntOrNull()
     }
-private fun extractIntFromString(string: String): Int? {
-    val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
-    if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
-    return value.value.toIntOrNull()
-}
 }
