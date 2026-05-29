@@ -16,7 +16,7 @@ import com.lagradost.models.*
 class AnimeONProvider : MainAPI() {
 
     override var mainUrl = "https://animeon.club"
-    override var name = "AnimeON"
+    override var name = "AnimeON ТЕСТ ЛОГІВ"
     override val hasMainPage = true
     override var lang = "uk"
     override val hasQuickSearch = true
