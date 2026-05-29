@@ -179,6 +179,12 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
+    private val moonExoHeaders = mapOf(
+    "User-Agent" to desktopUA,
+    "Referer"    to moonReferer,
+    "Accept"     to "*/*"
+)
+    
     private suspend fun processMoonUrl(
         url: String,
         quality: Int,
@@ -196,35 +202,54 @@ class AnimeONProvider : MainAPI() {
         }
 
         return when {
-            url.contains(".webm") || url.contains("mooncdn") || url.contains("moonanime.art/content") -> {
-                val finalUrl = resolveMoonRedirect(url) ?: url
-                val link = ExtractorLink(
-    source   = sourceName,
-    name     = sourceName,
-    url      = finalUrl,
-    referer  = moonReferer,  // ← має співпадати з заголовком!
-    quality  = resolvedQuality,
-    type     = ExtractorLinkType.VIDEO,
-    headers  = moonCdnHeaders  // ← обов'язково передайте!
-)
-                callback(if (isMovie) fixExtractorLink(link, sourceName) else link)
-                true
-            }
-            url.contains(".m3u8") -> {
-                val streams = M3u8Helper.generateM3u8(
-                    source    = sourceName,
-                    streamUrl = url,
-                    referer   = moonReferer,
-                    headers   = moonCdnHeaders
-                )
-                streams.dropLast(1).ifEmpty { streams }.forEach {
-                    callback(if (isMovie) fixExtractorLink(it, sourceName) else it)
-                }
-                true
-            }
-            else -> false
-        }
+            return when {
+    // ПРЯМІ ФАЙЛИ (.webm, .mp4)
+    url.contains(".webm") || url.contains("mooncdn") || url.contains("moonanime.art/content") -> {
+        // 1. resolveMoonRedirect ВИДАЛЯЄМО! Посилання вже прямі (мають ?sig= та ?expires=).
+        // Додатковий запит лише сповільнює роботу і нічого не дає.
+        val finalUrl = url 
+        
+        val link = ExtractorLink(
+            source   = sourceName,
+            name     = sourceName,
+            url      = finalUrl,
+            referer  = moonReferer,
+            quality  = resolvedQuality,
+            type     = ExtractorLinkType.VIDEO,
+            headers  = moonExoHeaders // 2. Тільки "чисті" заголовки без Origin та Sec-Fetch!
+        )
+        callback(if (isMovie) fixExtractorLink(link, sourceName) else link)
+        true
     }
+    
+    // M3U8 ПЛЕЙЛИСТИ
+    url.contains(".m3u8") -> {
+        // 1. Генеруємо плейлист з "важкими" заголовками, інакше CDN не віддасть список потоків
+        val streams = M3u8Helper.generateM3u8(
+            source    = sourceName,
+            streamUrl = url,
+            referer   = moonReferer,
+            headers   = moonPlaylistHeaders 
+        )
+        
+        // 2. Передаємо ExoPlayer тільки БЕЗПЕЧНІ заголовки (без Origin/Sec-Fetch)
+        streams.dropLast(1).ifEmpty { streams }.forEach { stream ->
+            val safeStream = ExtractorLink(
+                source        = stream.source,
+                name          = stream.name,
+                url           = stream.url,
+                referer       = stream.referer,
+                quality       = stream.quality,
+                type          = stream.type,
+                headers       = moonExoHeaders, // Очищаємо від зайвого!
+                extractorData = stream.extractorData
+            )
+            callback(if (isMovie) fixExtractorLink(safeStream, sourceName) else safeStream)
+        }
+        true
+    }
+    else -> false
+            }
 
     private suspend fun resolveMoonRedirect(tokenUrl: String): String? {
         return try {
