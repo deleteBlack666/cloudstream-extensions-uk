@@ -1,5 +1,6 @@
 package com.lagradost
 
+import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
@@ -708,69 +709,68 @@ class AnimeONProvider : MainAPI() {
     //   3. Перекодувати назад у ByteArray через Latin-1 → отримати оригінальні байти
     //   4. Декодувати як UTF-8 — фінальний рядок
     // ─────────────────────────────────────────────
+    
     private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
-        return try {
-            val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
-            // XOR кожен байт із відповідним байтом ключа (charCode — тільки молодший байт)
-            val result = ByteArray(decoded.size) { i ->
-                (decoded[i].toInt() and 0xFF xor (key[i % key.length].code and 0xFF)).toByte()
-            }
-            // JS: decodeURIComponent(escape(r))
-            // Крок 1: ByteArray → Latin-1 String (кожен байт = символ з кодом 0-255)
-            val latin1 = String(result, Charsets.ISO_8859_1)
-            // Крок 2: Latin-1 символи → ByteArray (відновлюємо оригінальні байти)
-            val utf8Bytes = ByteArray(latin1.length) { i -> latin1[i].code.toByte() }
-            // Крок 3: Декодуємо як UTF-8 — отримуємо правильний Unicode-рядок
-            String(utf8Bytes, Charsets.UTF_8)
-        } catch (e: Exception) { "" }
+    return try {
+        val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+        val result = ByteArray(decoded.size) { i ->
+            (decoded[i].toInt() and 0xFF xor (key[i % key.length].code and 0xFF)).toByte()
+        }
+        val latin1 = String(result, Charsets.ISO_8859_1)
+        val utf8Bytes = ByteArray(latin1.length) { i -> latin1[i].code.toByte() }
+        val finalStr = String(utf8Bytes, Charsets.UTF_8)
+        
+        Log.d("MOON_DEBUG", "🟡 Inner decrypted (key=$key): ${finalStr.take(200)}")
+        finalStr
+    } catch (e: Exception) { 
+        Log.d("MOON_DEBUG", "❌ Inner ERROR: ${e.message}")
+        "" 
     }
+}
 
-    // ─────────────────────────────────────────────
-    // ВИПРАВЛЕННЯ #5: moonOuterDecode (Outer Layer)
-    //
-    // Стара версія: result.append(dec.toChar())
-    // Проблема: dec — це Int (0-255), toChar() повертає Unicode-символ
-    // з тим самим кодом, але append(Char) у StringBuilder зберігає
-    // його як UTF-16 code unit. Для значень 0-127 це збігається з UTF-8,
-    // але для 128-255 — ні: наприклад, 0xC0 стане U+00C0 у рядку
-    // замість двох UTF-8 байтів 0xC3 0x80.
-    //
-    // Правильно: зберігати результат як ByteArray і декодувати як UTF-8,
-    // аналогічно JS new TextDecoder().decode(_x).
-    // ─────────────────────────────────────────────
-    private fun moonOuterDecode(base64Blob: String): String {
-        return try {
-            val raw = android.util.Base64.decode(base64Blob, android.util.Base64.DEFAULT)
-            if (raw.size < 33) return ""
+private fun moonOuterDecode(base64Blob: String): String {
+    return try {
+        Log.d("MOON_DEBUG", "🔵 Outer: Base64 length = ${base64Blob.length}")
+        val raw = android.util.Base64.decode(base64Blob, android.util.Base64.DEFAULT)
+        Log.d("MOON_DEBUG", "🔵 Outer: Raw bytes = ${raw.size}")
+        
+        if (raw.size < 33) {
+            Log.d("MOON_DEBUG", "❌ Outer: Too short!")
+            return ""
+        }
 
-            val state0 = raw[0].toInt() and 0xFF
-            val key    = raw.sliceArray(1 until 33)
-            val data   = raw.sliceArray(33 until raw.size)
+        val state0 = raw[0].toInt() and 0xFF
+        val key    = raw.sliceArray(1 until 33)
+        val data   = raw.sliceArray(33 until raw.size)
 
-            // Зберігаємо XOR-результат як ByteArray (а не StringBuilder),
-            // щоб коректно декодувати UTF-8 (TextDecoder-еквівалент)
-            val result = ByteArray(data.size)
-            var state  = state0
+        val result = ByteArray(data.size)
+        var state  = state0
 
-            for (i in data.indices) {
-                val d    = data[i].toInt() and 0xFF
-                val k    = key[i % 32].toInt() and 0xFF
-                result[i] = (d xor k xor state).toByte()
-                state = (d + k) and 0xFF
-            }
+        for (i in data.indices) {
+            val d    = data[i].toInt() and 0xFF
+            val k    = key[i % 32].toInt() and 0xFF
+            result[i] = (d xor k xor state).toByte()
+            state = (d + k) and 0xFF
+        }
 
-            // JS: new TextDecoder().decode(_x) → UTF-8
-            String(result, Charsets.UTF_8)
-        } catch (e: Exception) { "" }
+        val decoded = String(result, Charsets.UTF_8)
+        Log.d("MOON_DEBUG", "✅ Outer decoded. First 200 chars: ${decoded.take(200)}")
+        decoded
+    } catch (e: Exception) { 
+        Log.d("MOON_DEBUG", "❌ Outer ERROR: ${e.message}")        "" 
     }
+}
 
-    private suspend fun getMoonFile(iframeUrl: String): String {
-        val cleanUrl = iframeUrl
-            .replace(Regex("[?&]player=[^&]*"), "")
-            .replace("?&", "?")
-            .trimEnd('?', '&')
+private suspend fun getMoonFile(iframeUrl: String): String {
+    Log.d("MOON_DEBUG", "🚀 getMoonFile START: $iframeUrl")
+    val cleanUrl = iframeUrl
+        .replace(Regex("[?&]player=[^&]*"), "")
+        .replace("?&", "?")
+        .trimEnd('?', '&')
 
-        val html = app.get(cleanUrl, headers = mapOf(
+    Log.d("MOON_DEBUG", "🌐 Fetching URL: $cleanUrl")
+    val html = try {
+        app.get(cleanUrl, headers = mapOf(
             "User-Agent"      to desktopUA,
             "Accept"          to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
             "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -779,35 +779,58 @@ class AnimeONProvider : MainAPI() {
             "Sec-Fetch-Mode"  to "navigate",
             "Sec-Fetch-Site"  to "cross-site"
         )).text
+    } catch (e: Exception) {
+        Log.d("MOON_DEBUG", "❌ NET ERROR: ${e.message}")
+        return ""
+    }
 
-        val atobRegex = Regex("""atob\(["']([^"']+)["']\)""")
-        val atobMatch = atobRegex.find(html)?.groupValues?.get(1) ?: return ""
-        val decodedJs = moonOuterDecode(atobMatch)
-        if (decodedJs.isEmpty()) return ""
+    Log.d("MOON_DEBUG", "📄 HTML length: ${html.length}")
+    if (html.length < 100) {
+        Log.d("MOON_DEBUG", "❌ HTML too short! Content: ${html.take(200)}")
+        return ""
+    }
 
-        val keyRegex = Regex("""var\s+k\s*=\s*["']([^"']+)["']""")
-        val xorKey   = keyRegex.find(decodedJs)?.groupValues?.get(1) ?: return ""
+    val atobRegex = Regex("""atob\(["']([^"']+)["']\)""")
+    val atobMatch = atobRegex.find(html)?.groupValues?.get(1)
+    if (atobMatch == null) {
+        Log.d("MOON_DEBUG", "❌ atob NOT FOUND in HTML! HTML snippet: ${html.take(300)}")
+        return ""
+    }
+    Log.d("MOON_DEBUG", "✅ atob found, length = ${atobMatch.length}")
 
-        val encodedRegex = Regex("""_0xd\(["']([^"']+)["']\)""")
-        for (match in encodedRegex.findAll(decodedJs)) {
-            val decoded = moonDecrypt(match.groupValues[1], xorKey)
-            if (decoded.contains(".m3u8") ||
-                decoded.contains(".webm") ||
-                decoded.contains("mooncdn") ||
-                decoded.contains("moonanime.art/content") ||
-                decoded.startsWith("[")
-            ) {
-                return decoded
-            }
+    val decodedJs = moonOuterDecode(atobMatch)
+    if (decodedJs.isEmpty()) {
+        Log.d("MOON_DEBUG", "❌ moonOuterDecode returned empty!")
+        return ""
+    }
+
+    val keyRegex = Regex("""var\s+k\s*=\s*["']([^"']+)["']""")
+    val xorKey   = keyRegex.find(decodedJs)?.groupValues?.get(1)
+    if (xorKey == null) {        Log.d("MOON_DEBUG", "❌ XOR key NOT FOUND in decoded JS!")
+        return ""
+    }
+    Log.d("MOON_DEBUG", "🔑 XOR Key found: $xorKey")
+
+    val encodedRegex = Regex("""_0xd\(["']([^"']+)["']\)""")
+    val matches = encodedRegex.findAll(decodedJs).toList()
+    Log.d("MOON_DEBUG", "📦 Found ${matches.size} _0xd() calls")
+
+    for ((index, match) in matches.withIndex()) {
+        val decoded = moonDecrypt(match.groupValues[1], xorKey)
+        Log.d("MOON_DEBUG", "🔎 _0xd[$index] decoded: ${decoded.take(150)}")
+        
+        if (decoded.contains(".m3u8") ||
+            decoded.contains(".webm") ||
+            decoded.contains("mooncdn") ||
+            decoded.contains("moonanime.art/content") ||
+            decoded.startsWith("[")
+        ) {
+            Log.d("MOON_DEBUG", "🎯 MATCH FOUND: $decoded")
+            return decoded
         }
-
-        val urlRegex = Regex("""(https?://[^\s"']+(?:\.m3u8|\.webm)[^\s"']*)""")
-        return urlRegex.find(decodedJs)?.groupValues?.get(1) ?: ""
     }
 
-    private fun extractIntFromString(string: String): Int? {
-        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
-        if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
-        return value.value.toIntOrNull()
-    }
+    Log.d("MOON_DEBUG", "❌ No video URL found in any _0xd()")
+    return ""
+}
 }
