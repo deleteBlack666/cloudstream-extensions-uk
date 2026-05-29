@@ -210,65 +210,52 @@ class AnimeONProvider : MainAPI() {
 
     // ── MOON: обробка одного URL (content-redirect / webm / m3u8) ─────────────
     private suspend fun processMoonUrl(
-        url: String,
-        quality: Int,
-        sourceName: String,
-        isMovie: Boolean,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
+    url: String,
+    quality: Int,
+    sourceName: String,
+    isMovie: Boolean,
+    callback: (ExtractorLink) -> Unit
+): Boolean {
+    // Більше не викликаємо resolveMoonContentUrl! 
+    // ExoPlayer сам зробить редирект на mooncdn.space
+    val finalUrl = url 
 
-        // Резолвимо s.moonanime.art/content/... → s1.mooncdn.space/...webm
-        val finalUrl = when {
-            url.contains("moonanime.art/content") ||
-            url.contains("s.moonanime.art")       -> resolveMoonContentUrl(url) ?: return false
-            else                                   -> url
+    val resolvedQuality = when {
+        quality != Qualities.Unknown.value -> quality
+        finalUrl.contains("_1080") || finalUrl.contains("/1080/") -> 1080
+        finalUrl.contains("_720")  || finalUrl.contains("/720/")  -> 720
+        finalUrl.contains("_480")  || finalUrl.contains("/480/")  -> 480
+        finalUrl.contains("_360")  || finalUrl.contains("/360/")  -> 360
+        else -> Qualities.Unknown.value
+    }
+
+    return when {
+        // Прямий URL на webm або токенізований URL на moonanime.art
+        finalUrl.contains(".webm") || finalUrl.contains("mooncdn") || finalUrl.contains("moonanime.art/content") -> {
+            val link = ExtractorLink(
+                source   = sourceName,
+                name     = sourceName,
+                url      = finalUrl, // ExoPlayer сам отримає 302 і перейде на CDN
+                referer  = moonReferer,
+                quality  = resolvedQuality,
+                type     = ExtractorLinkType.VIDEO,
+                headers  = moonCdnHeaders // Обов'язково передаємо Referer/Origin для CDN
+            )
+            callback(if (isMovie) fixExtractorLink(link, sourceName) else link)
+            true
         }
-
-        // Якість: беремо з [1080p]-тегу (якщо є), або парсимо з назви файлу
-        val resolvedQuality = when {
-            quality != Qualities.Unknown.value     -> quality
-            finalUrl.contains("_1080") || finalUrl.contains("/1080/") -> 1080
-            finalUrl.contains("_720")  || finalUrl.contains("/720/")  -> 720
-            finalUrl.contains("_480")  || finalUrl.contains("/480/")  -> 480
-            finalUrl.contains("_360")  || finalUrl.contains("/360/")  -> 360
-            else                                   -> Qualities.Unknown.value
-        }
-
-        return when {
-            // .webm або mooncdn → ExtractorLinkType.VIDEO (ProgressiveMediaSource в ExoPlayer)
-            // + передаємо Referer/Origin щоб CDN не давав 403
-            finalUrl.contains(".webm") || finalUrl.contains("mooncdn") -> {
-                val link = ExtractorLink(
-                    source   = sourceName,
-                    name     = sourceName,
-                    url      = finalUrl,
-                    referer  = moonReferer,          // "https://moonanime.art/"
-                    quality  = resolvedQuality,
-                    type     = ExtractorLinkType.VIDEO,
-                    headers  = moonCdnHeaders        // User-Agent + Referer + Origin
-                )
-                callback(if (isMovie) fixExtractorLink(link, sourceName) else link)
-                true
+        finalUrl.contains(".m3u8") -> {
+            val streams = M3u8Helper.generateM3u8(
+                source = sourceName, streamUrl = finalUrl, 
+                referer = moonReferer, headers = moonCdnHeaders
+            )
+            streams.dropLast(1).ifEmpty { streams }.forEach { 
+                callback(if (isMovie) fixExtractorLink(it, sourceName) else it) 
             }
-
-            // .m3u8 → стандартний HLS з правильними заголовками
-            finalUrl.contains(".m3u8") -> {
-                val streams  = M3u8Helper.generateM3u8(
-                    source    = sourceName,
-                    streamUrl = finalUrl,
-                    referer   = moonReferer,
-                    headers   = moonCdnHeaders
-                )
-                val filtered = streams.dropLast(1)
-                val toUse    = if (filtered.isNotEmpty()) filtered else streams
-                toUse.forEach { link ->
-                    callback(if (isMovie) fixExtractorLink(link, sourceName) else link)
-                }
-                toUse.isNotEmpty()
-            }
-
-            else -> false
+            true
         }
+        else -> false
+    }
     }
 
     // ── MOON: розбір rawFile ([1080p]url,[720p]url або одиночний URL) ─────────
