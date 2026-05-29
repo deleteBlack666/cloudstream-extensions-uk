@@ -144,7 +144,7 @@ class AnimeONProvider : MainAPI() {
     }
 
     private suspend fun resolveAnimeApiUrl(animeId: Int): String {
-        val initial = fetchJsonOrNull("$apiUrl/$animeId") ?: return "$apiUrl/$apiUrl/$animeId"
+        val initial = fetchJsonOrNull("$apiUrl/$animeId") ?: return "$apiUrl/$animeId"
         return try {
             val redirect = Gson().fromJson(initial, RedirectResponse::class.java)
             if (redirect?.moved == true && !redirect.slug.isNullOrEmpty()) {
@@ -187,7 +187,7 @@ class AnimeONProvider : MainAPI() {
             Log.d(TAG, "MOON_RESOLVE: HTTP статус = ${response.code}")
             Log.d(TAG, "MOON_RESOLVE: всі заголовки відповіді = ${response.headers}")
 
-            val location = response.headers["location"] ?: response.headers["Location"]
+            val location = response.header("location")
             Log.d(TAG, "MOON_RESOLVE: Location header = $location")
 
             if (!location.isNullOrEmpty()) {
@@ -282,7 +282,6 @@ class AnimeONProvider : MainAPI() {
                     headers   = moonCdnHeaders
                 )
                 Log.d(TAG, "MOON_URL: M3u8Helper повернув ${streams.size} потоків")
-                // Виправлено: передаємо всі знайдені потоки без відкидання останнього елемента
                 streams.forEach { link ->
                     callback(if (isMovie) fixExtractorLink(link, sourceName) else link)
                 }
@@ -339,7 +338,7 @@ class AnimeONProvider : MainAPI() {
                 }
             })
         }
-        if (request.data.contains("seasons") && page != 1) return newHomePageResponse(emptyList())
+        if (request.data.contains("seasons") && page != 1) return newHomePageResponse(request.name, emptyList())
         val jsonText = fetchJsonOrNull(if (request.data.contains("%d")) request.data.format(page) else request.data) ?: return newHomePageResponse(request.name, emptyList())
         return if (!request.data.contains("seasons")) {
             val parsedJSON = Gson().fromJson(jsonText, NewAnimeModel::class.java)
@@ -560,7 +559,6 @@ class AnimeONProvider : MainAPI() {
                         foundAny = true
                     } else if (!fileUrl.isNullOrEmpty()) {
                         Log.d(TAG, "LOAD_LINKS: → Ashdi fileUrl M3U8")
-                        // Виправлено: прибрано .dropLast(1)
                         M3u8Helper.generateM3u8(
                             source    = sourceName,
                             streamUrl = fileUrl,
@@ -573,7 +571,6 @@ class AnimeONProvider : MainAPI() {
                 } else {
                     if (!fileUrl.isNullOrEmpty()) {
                         Log.d(TAG, "LOAD_LINKS: → fileUrl M3U8 (не Ashdi)")
-                        // Виправлено: прибрано .dropLast(1)
                         M3u8Helper.generateM3u8(
                             source    = sourceName,
                             streamUrl = fileUrl,
@@ -583,7 +580,6 @@ class AnimeONProvider : MainAPI() {
                     } else if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
                         if (videoUrl.contains("m3u8")) {
                             Log.d(TAG, "LOAD_LINKS: → Moon пряме m3u8")
-                            // Виправлено: прибрано .dropLast(1)
                             M3u8Helper.generateM3u8(
                                 source    = sourceName,
                                 streamUrl = videoUrl,
@@ -671,7 +667,6 @@ class AnimeONProvider : MainAPI() {
                                             processAshdiIframe(videoUrl, sourceName, isMovie = true, callback)
                                             foundAny = true
                                         } else if (!fileUrl.isNullOrEmpty()) {
-                                            // Виправлено: прибрано .dropLast(1)
                                             M3u8Helper.generateM3u8(
                                                 source    = sourceName,
                                                 streamUrl = fileUrl,
@@ -681,7 +676,6 @@ class AnimeONProvider : MainAPI() {
                                         }
                                     } else {
                                         if (!fileUrl.isNullOrEmpty()) {
-                                            // Виправлено: прибрано .dropLast(1)
                                             M3u8Helper.generateM3u8(
                                                 source    = sourceName,
                                                 streamUrl = fileUrl,
@@ -709,7 +703,6 @@ class AnimeONProvider : MainAPI() {
                                     processAshdiIframe(ep.videoUrl, sourceName, isMovie = true, callback)
                                     foundAny = true
                                 } else if (!ep.fileUrl.isNullOrEmpty()) {
-                                    // Виправлено: прибрано .dropLast(1)
                                     M3u8Helper.generateM3u8(
                                         source    = sourceName,
                                         streamUrl = ep.fileUrl,
@@ -719,7 +712,6 @@ class AnimeONProvider : MainAPI() {
                                 }
                             } else {
                                 if (!ep.fileUrl.isNullOrEmpty()) {
-                                    // Виправлено: прибрано .dropLast(1)
                                     M3u8Helper.generateM3u8(
                                         source    = sourceName,
                                         streamUrl = ep.fileUrl,
@@ -728,7 +720,6 @@ class AnimeONProvider : MainAPI() {
                                     foundAny = true
                                 } else if (!ep.videoUrl.isNullOrEmpty() && ep.videoUrl.contains("moonanime.art")) {
                                     if (ep.videoUrl.contains("m3u8")) {
-                                        // Виправлено: прибрано .dropLast(1)
                                         M3u8Helper.generateM3u8(
                                             source    = sourceName,
                                             streamUrl = ep.videoUrl,
@@ -779,7 +770,6 @@ class AnimeONProvider : MainAPI() {
                 val urlEnd    = html.indexOf('\'', urlStart)
                 val masterUrl = if (urlEnd != -1) html.substring(urlStart, urlEnd) else ""
                 if (masterUrl.isNotEmpty() && masterUrl.endsWith(".m3u8")) {
-                    // Виправлено: прибрано .dropLast(1)
                     val streams = M3u8Helper.generateM3u8(
                         source    = sourceName,
                         streamUrl = masterUrl,
