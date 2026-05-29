@@ -709,8 +709,13 @@ class AnimeONProvider : MainAPI() {
     //   3. Перекодувати назад у ByteArray через Latin-1 → отримати оригінальні байти
     //   4. Декодувати як UTF-8 — фінальний рядок
     // ─────────────────────────────────────────────
-    
-    private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
+
+
+private fun extractIntFromString(input: String): Int? {
+    return Regex("""\d+""").find(input)?.value?.toIntOrNull()
+}
+
+private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
     return try {
         val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
         val result = ByteArray(decoded.size) { i ->
@@ -757,7 +762,8 @@ private fun moonOuterDecode(base64Blob: String): String {
         Log.d("MOON_DEBUG", "✅ Outer decoded. First 200 chars: ${decoded.take(200)}")
         decoded
     } catch (e: Exception) { 
-        Log.d("MOON_DEBUG", "❌ Outer ERROR: ${e.message}")        "" 
+        Log.d("MOON_DEBUG", "❌ Outer ERROR: ${e.message}")        
+        "" // 2. Виправлено синтаксичну помилку (перенесено на новий рядок)
     }
 }
 
@@ -806,7 +812,8 @@ private suspend fun getMoonFile(iframeUrl: String): String {
 
     val keyRegex = Regex("""var\s+k\s*=\s*["']([^"']+)["']""")
     val xorKey   = keyRegex.find(decodedJs)?.groupValues?.get(1)
-    if (xorKey == null) {        Log.d("MOON_DEBUG", "❌ XOR key NOT FOUND in decoded JS!")
+    if (xorKey == null) {        
+        Log.d("MOON_DEBUG", "❌ XOR key NOT FOUND in decoded JS!")
         return ""
     }
     Log.d("MOON_DEBUG", "🔑 XOR Key found: $xorKey")
