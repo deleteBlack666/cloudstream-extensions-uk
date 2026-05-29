@@ -176,38 +176,6 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
-    // ── MOON: резолв 302 → фінальний CDN URL ─────────────────────────────────
-    // Робимо це В ПЛАГІНІ, щоб ExoPlayer отримав прямий URL без міждоменних редиректів
-    private suspend fun resolveMoonContentUrl(contentUrl: String): String? {
-        return try {
-            // GET без авто-редиректу → ловимо Location header
-            val response = app.get(
-                contentUrl,
-                headers        = moonCdnHeaders,
-                allowRedirects = false
-            )
-
-            val location = response.headers["location"]
-                ?: response.headers["Location"]
-
-            if (!location.isNullOrEmpty()) {
-                // Перевіряємо що CDN URL реально доступний (Range: bytes=0-1 = не качаємо весь файл)
-                val check = app.get(
-                    location,
-                    headers        = moonCdnHeaders,
-                    allowRedirects = true
-                )
-                if (check.code in 200..299) location else null
-            } else {
-                // Якщо вже фінальний URL (200 + тіло = пряме посилання)
-                val body = response.text.trim()
-                if (body.startsWith("http") &&
-                    (body.contains(".webm") || body.contains(".m3u8"))
-                ) body else null
-            }
-        } catch (e: Exception) { null }
-    }
-
     // ── MOON: обробка одного URL (content-redirect / webm / m3u8) ─────────────
     private suspend fun processMoonUrl(
     url: String,
