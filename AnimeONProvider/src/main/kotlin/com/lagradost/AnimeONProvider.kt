@@ -710,134 +710,122 @@ class AnimeONProvider : MainAPI() {
     //   4. Декодувати як UTF-8 — фінальний рядок
     // ─────────────────────────────────────────────
 
+        private fun moonOuterDecode(base64Blob: String): String {
+        return try {
+            Log.d("MOON_DEBUG", "🔵 moonOuterDecode: отримано Base64 довжиною = ${base64Blob.length}")
+            val raw = android.util.Base64.decode(base64Blob, android.util.Base64.DEFAULT)
+            Log.d("MOON_DEBUG", "🔵 moonOuterDecode: розмір raw байтів = ${raw.size}")
+            
+            if (raw.size < 33) {
+                Log.d("MOON_DEBUG", "❌ moonOuterDecode: занадто короткий масив байтів (< 33)")
+                return ""
+            }
 
-private fun extractIntFromString(input: String): Int? {
-    return Regex("""\d+""").find(input)?.value?.toIntOrNull()
-}
+            val state0 = raw[0].toInt() and 0xFF
+            val key    = raw.sliceArray(1 until 33)
+            val data   = raw.sliceArray(33 until raw.size)
 
-private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
-    return try {
-        val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
-        val result = ByteArray(decoded.size) { i ->
-            (decoded[i].toInt() and 0xFF xor (key[i % key.length].code and 0xFF)).toByte()
+            val result = ByteArray(data.size)
+            var state  = state0
+
+            for (i in data.indices) {
+                val d    = data[i].toInt() and 0xFF
+                val k    = key[i % 32].toInt() and 0xFF
+                result[i] = (d xor k xor state).toByte()
+                state = (d + k) and 0xFF
+            }
+
+            val decoded = String(result, Charsets.UTF_8)
+            Log.d("MOON_DEBUG", "✅ moonOuterDecode: успішно розшифровано. Перші 150 симв: ${decoded.take(150)}")
+            decoded
+        } catch (e: Exception) { 
+            Log.d("MOON_DEBUG", "❌ moonOuterDecode помилка: ${e.message}")
+            "" 
         }
-        val latin1 = String(result, Charsets.ISO_8859_1)
-        val utf8Bytes = ByteArray(latin1.length) { i -> latin1[i].code.toByte() }
-        val finalStr = String(utf8Bytes, Charsets.UTF_8)
-        
-        Log.d("MOON_DEBUG", "🟡 Inner decrypted (key=$key): ${finalStr.take(200)}")
-        finalStr
-    } catch (e: Exception) { 
-        Log.d("MOON_DEBUG", "❌ Inner ERROR: ${e.message}")
-        "" 
     }
-}
 
-private fun moonOuterDecode(base64Blob: String): String {
-    return try {
-        Log.d("MOON_DEBUG", "🔵 Outer: Base64 length = ${base64Blob.length}")
-        val raw = android.util.Base64.decode(base64Blob, android.util.Base64.DEFAULT)
-        Log.d("MOON_DEBUG", "🔵 Outer: Raw bytes = ${raw.size}")
+    private suspend fun getMoonFile(iframeUrl: String): String {
+        Log.d("MOON_DEBUG", "🚀 getMoonFile СТАРТ. URL: $iframeUrl")
+        val cleanUrl = iframeUrl
+            .replace(Regex("[?&]player=[^&]*"), "")
+            .replace("?&", "?")
+            .trimEnd('?', '&')
+
+        Log.d("MOON_DEBUG", "🌐 Очищений URL для запиту: $cleanUrl")
         
-        if (raw.size < 33) {
-            Log.d("MOON_DEBUG", "❌ Outer: Too short!")
+        val html = try {
+            val response = app.get(cleanUrl, headers = mapOf(
+                "User-Agent"      to desktopUA,
+                "Accept"          to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Referer"         to "https://animeon.club/",
+                "Sec-Fetch-Dest"  to "iframe",
+                "Sec-Fetch-Mode"  to "navigate",
+                "Sec-Fetch-Site"  to "cross-site"
+            )).text
+            Log.d("MOON_DEBUG", "📄 Запит успішний. Довжина отриманого HTML = ${response.length}")
+            if (response.length < 200) {
+                Log.d("MOON_DEBUG", "⚠️ HTML підозріло короткий: ${response.take(300)}")
+            }
+            response
+        } catch (e: Exception) {
+            Log.d("MOON_DEBUG", "❌ Помилка мережевого запиту: ${e.message}")
             return ""
         }
 
-        val state0 = raw[0].toInt() and 0xFF
-        val key    = raw.sliceArray(1 until 33)
-        val data   = raw.sliceArray(33 until raw.size)
+        val atobRegex = Regex("""atob\(["']([^"']+)["']\)""")
+        val atobMatch = atobRegex.find(html)?.groupValues?.get(1)
+        if (atobMatch == null) {
+            Log.d("MOON_DEBUG", "❌ Регулярка atob() НІЧОГО не знайшла в HTML!")
+            return ""
+        }
+        Log.d("MOON_DEBUG", "🎯 Знайдено atob біб. Довжина рядка = ${atobMatch.length}")
 
-        val result = ByteArray(data.size)
-        var state  = state0
-
-        for (i in data.indices) {
-            val d    = data[i].toInt() and 0xFF
-            val k    = key[i % 32].toInt() and 0xFF
-            result[i] = (d xor k xor state).toByte()
-            state = (d + k) and 0xFF
+        val decodedJs = moonOuterDecode(atobMatch)
+        if (decodedJs.isEmpty()) {
+            Log.d("MOON_DEBUG", "❌ Декодований JS порожній. Зупинка.")
+            return ""
         }
 
-        val decoded = String(result, Charsets.UTF_8)
-        Log.d("MOON_DEBUG", "✅ Outer decoded. First 200 chars: ${decoded.take(200)}")
-        decoded
-    } catch (e: Exception) { 
-        Log.d("MOON_DEBUG", "❌ Outer ERROR: ${e.message}")        
-        "" // 2. Виправлено синтаксичну помилку (перенесено на новий рядок)
-    }
-}
+        val keyRegex = Regex("""var\s+k\s*=\s*["']([^"']+)["']""")
+        val xorKey   = keyRegex.find(decodedJs)?.groupValues?.get(1)
+        if (xorKey == null) {
+            Log.d("MOON_DEBUG", "❌ Регулярка для XOR ключа (var k = ...) нічого не знайшла в JS!")
+            Log.d("MOON_DEBUG", "📄 Шматок JS без ключа: ${decodedJs.take(500)}")
+            return ""
+        }
+        Log.d("MOON_DEBUG", "🔑 Знайдено XOR Ключ: $xorKey")
 
-private suspend fun getMoonFile(iframeUrl: String): String {
-    Log.d("MOON_DEBUG", "🚀 getMoonFile START: $iframeUrl")
-    val cleanUrl = iframeUrl
-        .replace(Regex("[?&]player=[^&]*"), "")
-        .replace("?&", "?")
-        .trimEnd('?', '&')
+        val encodedRegex = Regex("""_0xd\(["']([^"']+)["']\)""")
+        val matches = encodedRegex.findAll(decodedJs).toList()
+        Log.d("MOON_DEBUG", "📦 Кількість знайдених викликів _0xd(...): ${matches.size}")
 
-    Log.d("MOON_DEBUG", "🌐 Fetching URL: $cleanUrl")
-    val html = try {
-        app.get(cleanUrl, headers = mapOf(
-            "User-Agent"      to desktopUA,
-            "Accept"          to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Referer"         to "https://animeon.club/",
-            "Sec-Fetch-Dest"  to "iframe",
-            "Sec-Fetch-Mode"  to "navigate",
-            "Sec-Fetch-Site"  to "cross-site"
-        )).text
-    } catch (e: Exception) {
-        Log.d("MOON_DEBUG", "❌ NET ERROR: ${e.message}")
-        return ""
-    }
+        for ((index, match) in matches.withIndex()) {
+            val decoded = moonDecrypt(match.groupValues[1], xorKey)
+            Log.d("MOON_DEBUG", "🔎 Спроба дешифрування _0xd[$index]: ${decoded.take(100)}")
+            
+            if (decoded.contains(".m3u8") ||
+                decoded.contains(".webm") ||
+                decoded.contains("mooncdn") ||
+                decoded.contains("moonanime.art/content") ||
+                decoded.startsWith("[")
+            ) {
+                Log.d("MOON_DEBUG", "🎯 Пряме попадання (посилання знайдено): $decoded")
+                return decoded
+            }
+        }
 
-    Log.d("MOON_DEBUG", "📄 HTML length: ${html.length}")
-    if (html.length < 100) {
-        Log.d("MOON_DEBUG", "❌ HTML too short! Content: ${html.take(200)}")
-        return ""
-    }
-
-    val atobRegex = Regex("""atob\(["']([^"']+)["']\)""")
-    val atobMatch = atobRegex.find(html)?.groupValues?.get(1)
-    if (atobMatch == null) {
-        Log.d("MOON_DEBUG", "❌ atob NOT FOUND in HTML! HTML snippet: ${html.take(300)}")
-        return ""
-    }
-    Log.d("MOON_DEBUG", "✅ atob found, length = ${atobMatch.length}")
-
-    val decodedJs = moonOuterDecode(atobMatch)
-    if (decodedJs.isEmpty()) {
-        Log.d("MOON_DEBUG", "❌ moonOuterDecode returned empty!")
-        return ""
-    }
-
-    val keyRegex = Regex("""var\s+k\s*=\s*["']([^"']+)["']""")
-    val xorKey   = keyRegex.find(decodedJs)?.groupValues?.get(1)
-    if (xorKey == null) {        
-        Log.d("MOON_DEBUG", "❌ XOR key NOT FOUND in decoded JS!")
-        return ""
-    }
-    Log.d("MOON_DEBUG", "🔑 XOR Key found: $xorKey")
-
-    val encodedRegex = Regex("""_0xd\(["']([^"']+)["']\)""")
-    val matches = encodedRegex.findAll(decodedJs).toList()
-    Log.d("MOON_DEBUG", "📦 Found ${matches.size} _0xd() calls")
-
-    for ((index, match) in matches.withIndex()) {
-        val decoded = moonDecrypt(match.groupValues[1], xorKey)
-        Log.d("MOON_DEBUG", "🔎 _0xd[$index] decoded: ${decoded.take(150)}")
+        Log.d("MOON_DEBUG", "⚠️ Перевірка через urlRegex (запасний варіант)...")
+        val urlRegex = Regex("""(https?://[^\s"']+(?:\.m3u8|\.webm)[^\s"']*)""")
+        val backupUrl = urlRegex.find(decodedJs)?.groupValues?.get(1) ?: ""
+        Log.d("MOON_DEBUG", " Result запасного варіанту: $backupUrl")
         
-        if (decoded.contains(".m3u8") ||
-            decoded.contains(".webm") ||
-            decoded.contains("mooncdn") ||
-            decoded.contains("moonanime.art/content") ||
-            decoded.startsWith("[")
-        ) {
-            Log.d("MOON_DEBUG", "🎯 MATCH FOUND: $decoded")
-            return decoded
-        }
+        return backupUrl
     }
 
-    Log.d("MOON_DEBUG", "❌ No video URL found in any _0xd()")
-    return ""
-}
+    private fun extractIntFromString(string: String): Int? {
+        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
+        if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
+        return value.value.toIntOrNull()
+    }
 }
