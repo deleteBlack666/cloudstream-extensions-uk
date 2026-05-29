@@ -74,7 +74,7 @@ class AnimeONProvider : MainAPI() {
         @SerializedName("releaseDate") val releaseDate: String?,
     )
 
-    private val moonReferer = "https://moonanime.art/"
+    private val moonReferer = "https://moonanime.art"
     private val moonOrigin  = "https://moonanime.art"
 
     private val moonCdnHeaders = mapOf(
