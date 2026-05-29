@@ -187,7 +187,8 @@ class AnimeONProvider : MainAPI() {
             Log.d(TAG, "MOON_RESOLVE: HTTP статус = ${response.code}")
             Log.d(TAG, "MOON_RESOLVE: всі заголовки відповіді = ${response.headers}")
 
-            val location = response.header("location")
+            // ФІКС: Використовуємо властивість .headers["location"] замість методу .header()
+            val location = response.headers["location"] ?: response.headers["Location"]
             Log.d(TAG, "MOON_RESOLVE: Location header = $location")
 
             if (!location.isNullOrEmpty()) {
@@ -235,9 +236,9 @@ class AnimeONProvider : MainAPI() {
     ): Boolean {
         Log.d(TAG, "MOON_URL: обробка url=$url quality=$quality isMovie=$isMovie")
 
+        // ФІКС: Якщо посилання вже містить .m3u8, оминаємо шкідливий тепер резолвер Cloudflare
         val finalUrl = when {
-            url.contains("moonanime.art/content") ||
-            url.contains("s.moonanime.art") -> {
+            (url.contains("moonanime.art/content") || url.contains("s.moonanime.art")) && !url.contains(".m3u8") -> {
                 val resolved = resolveMoonContentUrl(url)
                 Log.d(TAG, "MOON_URL: після резолву = $resolved")
                 resolved ?: run {
@@ -525,7 +526,7 @@ class AnimeONProvider : MainAPI() {
 
         val animeId = data.trim().toIntOrNull()
         if (animeId != null) {
-            Log.d(TAG, "LOAD_LINKS: це фільм, animeId=$animeId → loadMovieLinks")
+            Log.d(TAG, "LOAD_LINKS: це фильм, animeId=$animeId → loadMovieLinks")
             return loadMovieLinks(animeId, callback)
         }
 
@@ -583,7 +584,8 @@ class AnimeONProvider : MainAPI() {
                             M3u8Helper.generateM3u8(
                                 source    = sourceName,
                                 streamUrl = videoUrl,
-                                referer   = moonReferer
+                                referer   = moonReferer,
+                                headers   = moonCdnHeaders
                             ).forEach { callback(it) }
                             foundAny = true
                         } else {
@@ -683,8 +685,18 @@ class AnimeONProvider : MainAPI() {
                                             ).forEach { callback(fixExtractorLink(it, sourceName)) }
                                             foundAny = true
                                         } else if (!videoUrl.isNullOrEmpty() && videoUrl.contains("moonanime.art")) {
-                                            val rawFile = getMoonFile(videoUrl)
-                                            if (handleMoonFile(rawFile, sourceName, isMovie = true, callback)) foundAny = true
+                                            if (videoUrl.contains("m3u8")) {
+                                                M3u8Helper.generateM3u8(
+                                                    source    = sourceName,
+                                                    streamUrl = videoUrl,
+                                                    referer   = moonReferer,
+                                                    headers   = moonCdnHeaders
+                                                ).forEach { callback(fixExtractorLink(it, sourceName)) }
+                                                foundAny = true
+                                            } else {
+                                                val rawFile = getMoonFile(videoUrl)
+                                                if (handleMoonFile(rawFile, sourceName, isMovie = true, callback)) foundAny = true
+                                            }
                                         }
                                     }
                                 }
@@ -723,7 +735,8 @@ class AnimeONProvider : MainAPI() {
                                         M3u8Helper.generateM3u8(
                                             source    = sourceName,
                                             streamUrl = ep.videoUrl,
-                                            referer   = moonReferer
+                                            referer   = moonReferer,
+                                            headers   = moonCdnHeaders
                                         ).forEach { callback(fixExtractorLink(it, sourceName)) }
                                         foundAny = true
                                     } else {
