@@ -78,10 +78,14 @@ class AnimeONProvider : MainAPI() {
     private val moonOrigin  = "https://moonanime.art"
 
     private val moonCdnHeaders = mapOf(
-        "User-Agent" to userAgent,
-        "Referer"    to moonReferer,
-        "Origin"     to moonOrigin
-    )
+    "User-Agent" to desktopUA,
+    "Referer"    to "https://moonanime.art",  // ← без слеша в кінці!
+    // "Origin"  to moonOrigin,  // ← спробуйте закоментувати Origin
+    "Accept"     to "*/*",
+    "Sec-Fetch-Dest" to "video",
+    "Sec-Fetch-Mode" to "no-cors",
+    "Sec-Fetch-Site" to "cross-site"
+)
 
     private fun fixExtractorLink(link: ExtractorLink, sourceName: String): ExtractorLink {
         val cleanQuality = when {
