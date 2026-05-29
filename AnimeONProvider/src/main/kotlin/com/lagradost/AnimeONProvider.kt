@@ -199,14 +199,14 @@ class AnimeONProvider : MainAPI() {
             url.contains(".webm") || url.contains("mooncdn") || url.contains("moonanime.art/content") -> {
                 val finalUrl = resolveMoonRedirect(url) ?: url
                 val link = ExtractorLink(
-                    source   = sourceName,
-                    name     = sourceName,
-                    url      = finalUrl,
-                    referer  = moonReferer,
-                    quality  = resolvedQuality,
-                    type     = ExtractorLinkType.VIDEO,
-                    headers  = moonCdnHeaders
-                )
+    source   = sourceName,
+    name     = sourceName,
+    url      = finalUrl,
+    referer  = moonReferer,  // ← має співпадати з заголовком!
+    quality  = resolvedQuality,
+    type     = ExtractorLinkType.VIDEO,
+    headers  = moonCdnHeaders  // ← обов'язково передайте!
+)
                 callback(if (isMovie) fixExtractorLink(link, sourceName) else link)
                 true
             }
