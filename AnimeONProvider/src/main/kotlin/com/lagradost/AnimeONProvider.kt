@@ -710,7 +710,25 @@ class AnimeONProvider : MainAPI() {
     //   4. Декодувати як UTF-8 — фінальний рядок
     // ─────────────────────────────────────────────
 
-        private fun moonOuterDecode(base64Blob: String): String {
+    private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
+        return try {
+            val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+            val result = ByteArray(decoded.size) { i ->
+                (decoded[i].toInt() and 0xFF xor (key[i % key.length].code and 0xFF)).toByte()
+            }
+            val latin1 = String(result, Charsets.ISO_8859_1)
+            val utf8Bytes = ByteArray(latin1.length) { i -> latin1[i].code.toByte() }
+            val finalStr = String(utf8Bytes, Charsets.UTF_8)
+            
+            Log.d("MOON_DEBUG", "🟡 moonDecrypt: успішно розшифровано рядок. Перші 100 симв: ${finalStr.take(100)}")
+            finalStr
+        } catch (e: Exception) { 
+            Log.d("MOON_DEBUG", "❌ moonDecrypt помилка: ${e.message}")
+            "" 
+        }
+    }
+
+    private fun moonOuterDecode(base64Blob: String): String {
         return try {
             Log.d("MOON_DEBUG", "🔵 moonOuterDecode: отримано Base64 довжиною = ${base64Blob.length}")
             val raw = android.util.Base64.decode(base64Blob, android.util.Base64.DEFAULT)
@@ -828,4 +846,4 @@ class AnimeONProvider : MainAPI() {
         if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
         return value.value.toIntOrNull()
     }
-}
+} 
