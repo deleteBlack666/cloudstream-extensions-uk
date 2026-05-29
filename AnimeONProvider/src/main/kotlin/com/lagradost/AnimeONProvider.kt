@@ -31,6 +31,7 @@ class AnimeONProvider : MainAPI() {
     private val posterApi = "$mainUrl/api/uploads/images/%s"
     private val searchApi = "$mainUrl/api/anime?search="
     private val userAgent = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
+    private val desktopUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
     override val mainPage = mainPageOf(
         "$mainUrl/api/stats/anime/" to "Популярні аніме",
@@ -81,12 +82,17 @@ class AnimeONProvider : MainAPI() {
         "Origin"     to moonOrigin
     )
 
+    // ─────────────────────────────────────────────
+    // ВИПРАВЛЕННЯ #1: fixExtractorLink
+    // Стара логіка перевіряла "_1080." (крапку), але CDN-URL може мати
+    // "/1080/" без крапки або "?quality=1080". Розширено паттерн.
+    // ─────────────────────────────────────────────
     private fun fixExtractorLink(link: ExtractorLink, sourceName: String): ExtractorLink {
         val cleanQuality = when {
-            link.url.contains("/1080/") || link.url.contains("_1080.") -> 1080
-            link.url.contains("/720/")  || link.url.contains("_720.")  -> 720
-            link.url.contains("/480/")  || link.url.contains("_480.")  -> 480
-            link.url.contains("/360/")  || link.url.contains("_360.")  -> 360
+            link.url.contains("/1080/") || link.url.contains("_1080.") || link.url.contains("_1080/") -> 1080
+            link.url.contains("/720/")  || link.url.contains("_720.")  || link.url.contains("_720/")  -> 720
+            link.url.contains("/480/")  || link.url.contains("_480.")  || link.url.contains("_480/")  -> 480
+            link.url.contains("/360/")  || link.url.contains("_360.")  || link.url.contains("_360/")  -> 360
             else -> when (link.quality) {
                 in 900..1150 -> 1080
                 in 600..899  -> 720
@@ -173,6 +179,12 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
+    // ─────────────────────────────────────────────
+    // ВИПРАВЛЕННЯ #2: processMoonUrl
+    // Додано спробу резолвити 302-редирект самостійно перед передачею
+    // в ExoPlayer — інакше DefaultHttpDataSource скидає заголовки
+    // при cross-domain redirect і CDN повертає 403.
+    // ─────────────────────────────────────────────
     private suspend fun processMoonUrl(
         url: String,
         quality: Int,
@@ -180,19 +192,19 @@ class AnimeONProvider : MainAPI() {
         isMovie: Boolean,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val finalUrl = url
-
         val resolvedQuality = when {
             quality != Qualities.Unknown.value -> quality
-            finalUrl.contains("_1080") || finalUrl.contains("/1080/") -> 1080
-            finalUrl.contains("_720")  || finalUrl.contains("/720/")  -> 720
-            finalUrl.contains("_480")  || finalUrl.contains("/480/")  -> 480
-            finalUrl.contains("_360")  || finalUrl.contains("/360/")  -> 360
+            url.contains("_1080") || url.contains("/1080/") -> 1080
+            url.contains("_720")  || url.contains("/720/")  -> 720
+            url.contains("_480")  || url.contains("/480/")  -> 480
+            url.contains("_360")  || url.contains("/360/")  -> 360
             else -> Qualities.Unknown.value
         }
 
         return when {
-            finalUrl.contains(".webm") || finalUrl.contains("mooncdn") || finalUrl.contains("moonanime.art/content") -> {
+            url.contains(".webm") || url.contains("mooncdn") || url.contains("moonanime.art/content") -> {
+                // Резолвимо редирект самостійно, щоб ExoPlayer отримав фінальний CDN URL
+                val finalUrl = resolveMoonRedirect(url) ?: url
                 val link = ExtractorLink(
                     source   = sourceName,
                     name     = sourceName,
@@ -205,10 +217,12 @@ class AnimeONProvider : MainAPI() {
                 callback(if (isMovie) fixExtractorLink(link, sourceName) else link)
                 true
             }
-            finalUrl.contains(".m3u8") -> {
+            url.contains(".m3u8") -> {
                 val streams = M3u8Helper.generateM3u8(
-                    source = sourceName, streamUrl = finalUrl,
-                    referer = moonReferer, headers = moonCdnHeaders
+                    source    = sourceName,
+                    streamUrl = url,
+                    referer   = moonReferer,
+                    headers   = moonCdnHeaders
                 )
                 streams.dropLast(1).ifEmpty { streams }.forEach {
                     callback(if (isMovie) fixExtractorLink(it, sourceName) else it)
@@ -217,6 +231,30 @@ class AnimeONProvider : MainAPI() {
             }
             else -> false
         }
+    }
+
+    // ─────────────────────────────────────────────
+    // ВИПРАВЛЕННЯ #3: Новий метод resolveMoonRedirect
+    // Резолвить 302 → фінальний CDN URL.
+    // Cloudflare перевіряє Sec-Fetch-* заголовки — без них повертає 400.
+    // ─────────────────────────────────────────────
+    private suspend fun resolveMoonRedirect(tokenUrl: String): String? {
+        return try {
+            val response = app.get(
+                tokenUrl,
+                headers = mapOf(
+                    "User-Agent"     to userAgent,
+                    "Referer"        to moonReferer,
+                    "Origin"         to moonOrigin,
+                    "Sec-Fetch-Dest" to "video",
+                    "Sec-Fetch-Mode" to "no-cors",
+                    "Sec-Fetch-Site" to "cross-site",
+                    "Accept"         to "*/*",
+                ),
+                allowRedirects = false
+            )
+            response.headers["location"] ?: response.headers["Location"]
+        } catch (e: Exception) { null }
     }
 
     private suspend fun handleMoonFile(
@@ -254,7 +292,6 @@ class AnimeONProvider : MainAPI() {
                 }
             })
         }
-        // ВИПРАВЛЕНО (line 246): додано request.name як перший аргумент
         if (request.data.contains("seasons") && page != 1) return newHomePageResponse(request.name, emptyList())
         val jsonText = fetchJsonOrNull(if (request.data.contains("%d")) request.data.format(page) else request.data) ?: return newHomePageResponse(request.name, emptyList())
         return if (!request.data.contains("seasons")) {
@@ -413,7 +450,6 @@ class AnimeONProvider : MainAPI() {
                 this.recommendations = franchise
             }
         } else {
-            // ВИПРАВЛЕНО (line 344): додано !! для String? -> String
             val backgroundImage = if (animeJSON.backgroundImage.isNullOrBlank()) posterUrl else animeJSON.backgroundImage!!
             newMovieLoadResponse(animeJSON.titleUa, "$mainUrl/anime/$animeId", tvType, animeId.toString()) {
                 this.posterUrl           = posterUrl
@@ -655,17 +691,53 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { }
     }
 
+    // ─────────────────────────────────────────────
+    // ВИПРАВЛЕННЯ #4: moonDecrypt (Inner Layer)
+    //
+    // Стара версія: result.toString() → потенційно неправильний UTF-8
+    // через те, що append(Char) додає символи як Latin-1 (0-255),
+    // але toString() на StringBuilder поверне рядок із суррогатними парами
+    // для байтів > 127 замість правильного UTF-8.
+    //
+    // JS-еквівалент: decodeURIComponent(escape(r))
+    //   escape()             → кодує binary string як Latin-1, байти > 127 як %uXXXX або %XX
+    //   decodeURIComponent() → декодує %XX послідовності як UTF-8 байти
+    // Правильний Kotlin-еквівалент:
+    //   1. Зібрати XOR-результат як ByteArray (значення 0-255)
+    //   2. Інтерпретувати як ISO-8859-1 (Latin-1) — зберігає байти без змін
+    //   3. Перекодувати назад у ByteArray через Latin-1 → отримати оригінальні байти
+    //   4. Декодувати як UTF-8 — фінальний рядок
+    // ─────────────────────────────────────────────
     private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
         return try {
             val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
-            val result  = StringBuilder()
-            for (i in decoded.indices) {
-                result.append((decoded[i].toInt() and 0xFF xor key[i % key.length].code).toChar())
+            // XOR кожен байт із відповідним байтом ключа (charCode — тільки молодший байт)
+            val result = ByteArray(decoded.size) { i ->
+                (decoded[i].toInt() and 0xFF xor (key[i % key.length].code and 0xFF)).toByte()
             }
-            result.toString()
+            // JS: decodeURIComponent(escape(r))
+            // Крок 1: ByteArray → Latin-1 String (кожен байт = символ з кодом 0-255)
+            val latin1 = String(result, Charsets.ISO_8859_1)
+            // Крок 2: Latin-1 символи → ByteArray (відновлюємо оригінальні байти)
+            val utf8Bytes = ByteArray(latin1.length) { i -> latin1[i].code.toByte() }
+            // Крок 3: Декодуємо як UTF-8 — отримуємо правильний Unicode-рядок
+            String(utf8Bytes, Charsets.UTF_8)
         } catch (e: Exception) { "" }
     }
 
+    // ─────────────────────────────────────────────
+    // ВИПРАВЛЕННЯ #5: moonOuterDecode (Outer Layer)
+    //
+    // Стара версія: result.append(dec.toChar())
+    // Проблема: dec — це Int (0-255), toChar() повертає Unicode-символ
+    // з тим самим кодом, але append(Char) у StringBuilder зберігає
+    // його як UTF-16 code unit. Для значень 0-127 це збігається з UTF-8,
+    // але для 128-255 — ні: наприклад, 0xC0 стане U+00C0 у рядку
+    // замість двох UTF-8 байтів 0xC3 0x80.
+    //
+    // Правильно: зберігати результат як ByteArray і декодувати як UTF-8,
+    // аналогічно JS new TextDecoder().decode(_x).
+    // ─────────────────────────────────────────────
     private fun moonOuterDecode(base64Blob: String): String {
         return try {
             val raw = android.util.Base64.decode(base64Blob, android.util.Base64.DEFAULT)
@@ -675,16 +747,20 @@ class AnimeONProvider : MainAPI() {
             val key    = raw.sliceArray(1 until 33)
             val data   = raw.sliceArray(33 until raw.size)
 
-            val result = StringBuilder()
+            // Зберігаємо XOR-результат як ByteArray (а не StringBuilder),
+            // щоб коректно декодувати UTF-8 (TextDecoder-еквівалент)
+            val result = ByteArray(data.size)
             var state  = state0
+
             for (i in data.indices) {
-                val d   = data[i].toInt() and 0xFF
-                val k   = key[i % 32].toInt() and 0xFF
-                val dec = d xor k xor state
-                result.append(dec.toChar())
+                val d    = data[i].toInt() and 0xFF
+                val k    = key[i % 32].toInt() and 0xFF
+                result[i] = (d xor k xor state).toByte()
                 state = (d + k) and 0xFF
             }
-            result.toString()
+
+            // JS: new TextDecoder().decode(_x) → UTF-8
+            String(result, Charsets.UTF_8)
         } catch (e: Exception) { "" }
     }
 
@@ -693,8 +769,6 @@ class AnimeONProvider : MainAPI() {
             .replace(Regex("[?&]player=[^&]*"), "")
             .replace("?&", "?")
             .trimEnd('?', '&')
-
-        val desktopUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
         val html = app.get(cleanUrl, headers = mapOf(
             "User-Agent"      to desktopUA,
