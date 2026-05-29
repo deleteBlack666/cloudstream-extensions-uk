@@ -610,4 +610,122 @@ class AnimeONProvider : MainAPI() {
                                                 type = linkType,
                                                 headers = moonHeaders
                                             )
-                                            callback(fixMovieExtractorLink(directLink, sourceName,
+                                            callback(fixMovieExtractorLink(directLink, sourceName, moonHeaders))
+                                        }
+                                        foundAny = true
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) { }
+                    }
+                }
+            }
+        } catch (e: Exception) { }
+
+        return foundAny
+    }
+
+    private suspend fun processAshdiIframe(iframeUrl: String, sourceName: String, isMovie: Boolean, callback: (ExtractorLink) -> Unit) {
+        try {
+            val cleanUrl = iframeUrl
+                .replace(Regex("""\?season=null\?"""), "?")
+                .replace(Regex("""\?season=null$"""), "")
+            val url = if (cleanUrl.contains("?")) cleanUrl else "$cleanUrl?player=animeon.club"
+            val html = app.get(url, headers = mapOf(
+                "Referer" to "$mainUrl/",
+                "User-Agent" to userAgent,
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+            )).text
+
+            val fileIndex = html.indexOf("file:'")
+            if (fileIndex != -1) {
+                val urlStart = fileIndex + 6
+                val urlEnd = html.indexOf('\'', urlStart)
+                if (urlEnd != -1) {
+                    val masterUrl = html.substring(urlStart, urlEnd)
+                    if (masterUrl.isNotEmpty() && masterUrl.endsWith(".m3u8")) {
+                        M3u8Helper.generateM3u8(sourceName, masterUrl, "https://ashdi.vip/").dropLast(1).forEach { link ->
+                            if (isMovie) callback(fixMovieExtractorLink(link, sourceName, mapOf("Referer" to "https://ashdi.vip/")))
+                            else callback(link)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) { }
+    }
+
+    private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
+        return try {
+            val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+            val result = StringBuilder()
+            for (i in decoded.indices) {
+                result.append((decoded[i].toInt() and 0xFF xor key[i % key.length].code).toChar())
+            }
+            result.toString()
+        } catch (e: Exception) { "" }
+    }
+
+    private fun moonOuterDecode(base64Blob: String): String {
+        return try {
+            val raw = android.util.Base64.decode(base64Blob, android.util.Base64.DEFAULT)
+            if (raw.size < 33) return ""
+
+            val state0 = raw[0].toInt() and 0xFF
+            val key = raw.sliceArray(1 until 33)
+            val data = raw.sliceArray(33 until raw.size)
+
+            val result = StringBuilder()
+            var state = state0
+            for (i in data.indices) {
+                val d = data[i].toInt() and 0xFF
+                val k = key[i % 32].toInt() and 0xFF
+                val dec = d xor k xor state
+                result.append(dec.toChar())
+                state = (d + k) and 0xFF
+            }
+            result.toString()
+        } catch (e: Exception) { "" }
+    }
+    
+    private suspend fun getMoonFile(iframeUrl: String): String {
+        val cleanUrl = iframeUrl
+            .replace(Regex("[?&]player=[^&]*"), "")
+            .replace("?&", "?")
+            .trimEnd('?', '&')
+
+        Log.d(TAG, "GET_MOON_FILE: iframe URL = $cleanUrl")
+        val html = app.get(cleanUrl, headers = mapOf(
+            "User-Agent" to userAgent,
+            "Referer" to "https://animeon.club/"
+        )).text
+
+        val atobRegex = Regex("""atob\(["']([^"']+)["']\)""")
+        val atobMatch = atobRegex.find(html)?.groupValues?.get(1)
+        if (atobMatch.isNullOrEmpty()) return ""
+        
+        val decodedJs = moonOuterDecode(atobMatch)
+        if (decodedJs.isEmpty()) return ""
+
+        val keyRegex = Regex("""var\s+k\s*=\s*["']([^"']+)["']""")
+        val xorKey = keyRegex.find(decodedJs)?.groupValues?.get(1)
+        if (xorKey.isNullOrEmpty()) return ""
+
+        val encodedRegex = Regex("""_0xd\(["']([^"']+)["']\)""")
+        val matches = encodedRegex.findAll(decodedJs).toList()
+
+        for ((idx, match) in matches.withIndex()) {
+            val decoded = moonDecrypt(match.groupValues[1], xorKey)
+            if (decoded.contains(".m3u8") || decoded.contains(".webm") || decoded.contains(".mp4") || decoded.contains("/content/v/")) {
+                Log.d(TAG, "GET_MOON_FILE: Успішно знайдено лінк плеєра [$idx] → $decoded")
+                return decoded
+            }
+        }
+        return ""
+    }
+
+    private fun extractIntFromString(string: String): Int? {
+        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
+        if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
+        return value.value.toIntOrNull()
+    }
+}
