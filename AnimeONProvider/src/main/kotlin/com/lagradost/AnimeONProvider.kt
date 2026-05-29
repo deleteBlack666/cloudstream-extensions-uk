@@ -1,6 +1,7 @@
 package com.lagradost
 
 import com.google.gson.Gson
+
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import com.lagradost.cloudstream3.*
@@ -29,20 +30,6 @@ class AnimeONProvider : MainAPI() {
     private val posterApi = "$mainUrl/api/uploads/images/%s"
     private val searchApi = "$mainUrl/api/anime?search="
     private val userAgent = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
-
-    // Мінімальні заголовки для ExoPlayer (БЕЗ Origin/Sec-Fetch, щоб уникнути 400)
-private val moonExoHeaders = mapOf(
-    "User-Agent" to userAgent,
-    "Referer" to "https://moonanime.art/"
-)
-
-// Заголовки для отримання HTML/JS (з Origin для CORS)
-private val moonFetchHeaders = mapOf(
-    "User-Agent" to userAgent,
-    "Referer" to "https://animeon.club/",
-    "Origin" to "https://moonanime.art",
-    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-)
 
     override val mainPage = mainPageOf(
         "$mainUrl/api/stats/anime/" to "Популярні аніме",
@@ -144,7 +131,7 @@ private val moonFetchHeaders = mapOf(
     }
 
     private suspend fun resolveAnimeApiUrl(animeId: Int): String {
-        val initial = fetchJsonOrNull("$apiUrl/$animeId") ?: return "$apiUrl/$animeId"
+        val initial = fetchJsonOrNull("$apiUrl/$animeId") ?: return "$apiUrl/$apiUrl/$animeId"
         return try {
             val redirect = Gson().fromJson(initial, RedirectResponse::class.java)
             if (redirect?.moved == true && !redirect.slug.isNullOrEmpty()) {
@@ -456,7 +443,7 @@ while (skip <= maxSkip) {
                                                 "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
                                                 "Referer" to "https://animeon.club/"
                                             )
-                                        ).dropLast(1).forEach { callback(it) }
+                                        ).dropLast(1).forEach { callback(it) } // без фіксу
                                     }
                                 } else if (rawFile.contains(".m3u8")) {
                                     val streams = M3u8Helper.generateM3u8(
@@ -473,21 +460,6 @@ while (skip <= maxSkip) {
                                     val filtered = streams.dropLast(1)
                                     if (filtered.isNotEmpty()) filtered.forEach { callback(it) }
                                     else streams.forEach { callback(it) }
-                                } else {
-                                    // Пряме посилання (.webm, .mp4 тощо)
-                                    val link = ExtractorLink(
-                                        source = sourceName,
-                                        name = sourceName,
-                                        url = rawFile,
-                                        referer = "https://moonanime.art/",
-                                        quality = Qualities.Unknown.value,
-                                        type = ExtractorLinkType.VIDEO,
-                                        headers = mapOf(
-                                            "User-Agent" to userAgent,
-                                            "Referer" to "https://moonanime.art/"
-                                        )
-                                    )
-                                    callback(link)
                                 }
                                 foundAny = true
                             }
@@ -641,21 +613,6 @@ while (skip <= maxSkip) {
                                                 val filtered = streams.dropLast(1)
                                                 if (filtered.isNotEmpty()) filtered.forEach { callback(fixExtractorLink(it, sourceName)) }
                                                 else streams.forEach { callback(fixExtractorLink(it, sourceName)) }
-                                            } else {
-    // Пряме посилання (.webm, .mp4 тощо)
-    val link = ExtractorLink(
-        source = sourceName,
-        name = sourceName,
-        url = rawFile,
-        referer = "https://moonanime.art/",
-        quality = Qualities.Unknown.value,
-        type = ExtractorLinkType.VIDEO,
-        headers = moonExoHeaders  // ← Без Origin/Sec-Fetch!
-    )
-    
-                                            }
-                                                )
-                                                callback(fixExtractorLink(link, sourceName))
                                             }
                                             foundAny = true
                                         }
@@ -739,57 +696,43 @@ while (skip <= maxSkip) {
     } catch (e: Exception) { "" }
     }
     
-    // ===== ОНОВЛЕНИЙ getMoonFile: шукає як .m3u8, так і .webm =====
     private suspend fun getMoonFile(iframeUrl: String): String {
-        val cleanUrl = iframeUrl
-            .replace(Regex("[?&]player=[^&]*"), "")
-            .replace("?&", "?")
-            .trimEnd('?', '&')
+    val cleanUrl = iframeUrl
+        .replace(Regex("[?&]player=[^&]*"), "")
+        .replace("?&", "?")
+        .trimEnd('?', '&')
 
-        val html = app.get(cleanUrl, headers = mapOf(
-            "User-Agent" to userAgent,
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Referer" to "https://animeon.club/"
-        )).text
+    val html = app.get(cleanUrl, headers = mapOf(
+        "User-Agent" to userAgent,
+        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer" to "https://animeon.club/"
+    )).text
 
-        // 1. Прямий пошук file: з m3u8 або webm у HTML
-        val fileRegex = Regex("""file\s*:\s*['"](https?://[^"']+\.(?:m3u8|webm)[^"']*)["']""")
-        val directMatch = fileRegex.find(html)?.groupValues?.get(1)
-        if (directMatch != null) return directMatch
+    
+    val atobRegex = Regex("""atob\(["']([^"']+)["']\)""")
+    val atobMatch = atobRegex.find(html)?.groupValues?.get(1) ?: return ""
+    val decodedJs = moonOuterDecode(atobMatch)
+    if (decodedJs.isEmpty()) return ""
 
-        // 2. Декодуємо atob -> moonOuterDecode
-        val atobRegex = Regex("""atob\(["']([^"']+)["']\)""")
-        val atobMatch = atobRegex.find(html)?.groupValues?.get(1) ?: return ""
-        val decodedJs = moonOuterDecode(atobMatch)
-        if (decodedJs.isEmpty()) return ""
+    
+    val keyRegex = Regex("""var\s+k\s*=\s*["']([^"']+)["']""")
+    val xorKey = keyRegex.find(decodedJs)?.groupValues?.get(1) ?: return ""
 
-        // 3. Шукаємо пряме посилання file: у розшифрованому JS
-        val fileInJs = fileRegex.find(decodedJs)?.groupValues?.get(1)
-        if (fileInJs != null) return fileInJs
-
-        // 4. Шукаємо будь-яке m3u8/webm посилання в розшифрованому JS
-        val anyMedia = Regex("""https?://[^"'\s]+\.(?:m3u8|webm)[^"'\s]*""").find(decodedJs)?.value
-        if (anyMedia != null) return anyMedia
-
-        // 5. Старі методи з _0xd
-        val keyRegex = Regex("""var\s+k\s*=\s*["']([^"']+)["']""")
-        val xorKey = keyRegex.find(decodedJs)?.groupValues?.get(1) ?: return ""
-
-        val encodedRegex = Regex("""_0xd\(["']([^"']+)["']\)""")
-        for (match in encodedRegex.findAll(decodedJs)) {
-            val decoded = moonDecrypt(match.groupValues[1], xorKey)
-            if (decoded.contains(".m3u8") || decoded.contains(".webm")) {
-                return decoded
-            }
+    
+    val encodedRegex = Regex("""_0xd\(["']([^"']+)["']\)""")
+    for (match in encodedRegex.findAll(decodedJs)) {
+        val decoded = moonDecrypt(match.groupValues[1], xorKey)
+        if (decoded.contains(".m3u8")) {
+            return decoded
         }
-
-        return ""
     }
 
-    private fun extractIntFromString(string: String): Int? {
-        val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
-        if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
-        return value.value.toIntOrNull()
+    return ""
     }
+private fun extractIntFromString(string: String): Int? {
+    val value = Regex("(\\d+)").findAll(string).lastOrNull() ?: return null
+    if (value.value[0].toString() == "0") return value.value.drop(1).toIntOrNull()
+    return value.value.toIntOrNull()
 }
+} 
