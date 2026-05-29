@@ -442,9 +442,9 @@ while (skip <= maxSkip) {
                                                 "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
                                                 "Referer" to "https://animeon.club/"
                                             )
-                                        ).dropLast(1).forEach { callback(it) } // без фіксу
+                                        ).dropLast(1).forEach { callback(it) }
                                     }
-                                } else if (rawFile.contains(".m3u8") || rawFile.contains(".webm")) {
+                                } else if (rawFile.contains(".m3u8")) {
                                     val streams = M3u8Helper.generateM3u8(
                                         source = sourceName,
                                         streamUrl = rawFile,
@@ -459,6 +459,21 @@ while (skip <= maxSkip) {
                                     val filtered = streams.dropLast(1)
                                     if (filtered.isNotEmpty()) filtered.forEach { callback(it) }
                                     else streams.forEach { callback(it) }
+                                } else {
+                                    // Пряме посилання (.webm, .mp4 тощо)
+                                    val link = ExtractorLink(
+                                        source = sourceName,
+                                        name = sourceName,
+                                        url = rawFile,
+                                        referer = "https://moonanime.art/",
+                                        quality = Qualities.Unknown.value,
+                                        type = ExtractorLinkType.VIDEO,
+                                        headers = mapOf(
+                                            "User-Agent" to userAgent,
+                                            "Referer" to "https://moonanime.art/"
+                                        )
+                                    )
+                                    callback(link)
                                 }
                                 foundAny = true
                             }
@@ -597,7 +612,7 @@ while (skip <= maxSkip) {
                                                         )
                                                     ).dropLast(1).forEach { callback(fixExtractorLink(it, sourceName)) }
                                                 }
-                                            } else if (rawFile.contains(".m3u8") || rawFile.contains(".webm")) {
+                                            } else if (rawFile.contains(".m3u8")) {
                                                 val streams = M3u8Helper.generateM3u8(
                                                     source = sourceName,
                                                     streamUrl = rawFile,
@@ -612,6 +627,21 @@ while (skip <= maxSkip) {
                                                 val filtered = streams.dropLast(1)
                                                 if (filtered.isNotEmpty()) filtered.forEach { callback(fixExtractorLink(it, sourceName)) }
                                                 else streams.forEach { callback(fixExtractorLink(it, sourceName)) }
+                                            } else {
+                                                // Пряме посилання (.webm, .mp4 тощо)
+                                                val link = ExtractorLink(
+                                                    source = sourceName,
+                                                    name = sourceName,
+                                                    url = rawFile,
+                                                    referer = "https://moonanime.art/",
+                                                    quality = Qualities.Unknown.value,
+                                                    type = ExtractorLinkType.VIDEO,
+                                                    headers = mapOf(
+                                                        "User-Agent" to userAgent,
+                                                        "Referer" to "https://moonanime.art/"
+                                                    )
+                                                )
+                                                callback(fixExtractorLink(link, sourceName))
                                             }
                                             foundAny = true
                                         }
