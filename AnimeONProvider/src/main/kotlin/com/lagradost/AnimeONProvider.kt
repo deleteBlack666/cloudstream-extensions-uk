@@ -80,7 +80,7 @@ class AnimeONProvider : MainAPI() {
     private val moonCdnHeaders = mapOf(
     "User-Agent" to desktopUA,
     "Referer"    to "https://moonanime.art",  // ← без слеша в кінці!
-    // "Origin"  to moonOrigin,  // ← спробуйте закоментувати Origin
+    "Origin"  to moonOrigin,  // ← спробуйте закоментувати Origin
     "Accept"     to "*/*",
     "Sec-Fetch-Dest" to "video",
     "Sec-Fetch-Mode" to "no-cors",
