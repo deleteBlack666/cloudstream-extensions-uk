@@ -1,0 +1,57 @@
+name: Clear Master Branch Commits
+
+on:
+  workflow_dispatch:
+    inputs:
+      delete_mode:
+        description: '?'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - 'all' # Повністю очистити всю історію
+          - 'last_5' # Видалити лише останні 5 коммітів
+          - 'last_50' # Видалити лише останні 50 коммітів
+
+jobs:
+  clear-history:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Reset Master History
+        run: |
+          git config --global user.name "deleteBlack666"
+          git config --global user.email "78680082+deleteBlack666@users.noreply.github.com"
+          
+          MODE="${{ github.event.inputs.delete_mode }}"
+          
+          if [ "$MODE" = "all" ]; then
+            echo "⚠️ ЗАПУСКАЄМО ПОВНЕ ОЧИЩЕННЯ ГІЛКИ MASTER..."
+            
+            # Створюємо тимчасову порожню гілку
+            git checkout --orphan temp_branch
+            
+            # Додаємо поточні файли (включаючи цей скрипт), щоб вони НЕ зникли
+            git add -A
+            git commit -m "Initial commit (History cleared)"
+            
+            # Видаляємо стару гілку master локально і замінюємо її новою порожньою
+            git branch -D master
+            git branch -m master
+          else
+            # Якщо обрали видалення 5 або 50 коммітів
+            COUNT=5
+            if [ "$MODE" = "last_50" ]; then COUNT=50; fi
+            echo "Видаляємо останні $COUNT коммітів..."
+            git reset --hard HEAD~$COUNT
+          fi
+          
+          echo "Примусово оновлюємо GitHub..."
+          git push origin master --force
