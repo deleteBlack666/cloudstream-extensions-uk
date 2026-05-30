@@ -3,6 +3,7 @@ package com.lagradost
 import android.util.Log
 import com.google.gson.Gson
 
+import java.nio.charset.StandardCharsets
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import com.lagradost.cloudstream3.*
@@ -903,14 +904,19 @@ class AnimeONProvider : MainAPI() {
     }
 
     private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
-        return try {
-            val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
-            val result = StringBuilder()
-            for (i in decoded.indices) {
-                result.append((decoded[i].toInt() and 0xFF xor key[i % key.length].code).toChar())
-            }
-            result.toString()
-        } catch (e: Exception) { "" }
+    private fun moonDecrypt(encoded: String, key: String = "mAnK"): String {
+    return try {
+        // Очищаємо від можливих пробілів/переносів у base64
+        val cleanEncoded = encoded.replace("\\s".toRegex(), "")
+        val decoded = Base64.decode(cleanEncoded, Base64.DEFAULT)
+        val decryptedBytes = ByteArray(decoded.size)
+        
+        for (i in decoded.indices) {
+            decryptedBytes[i] = (decoded[i].toInt() and 0xFF xor key[i % key.length].code).toByte()
+        }
+        // Правильно декодуємо в UTF-8 (заміна decodeURIComponent(escape(r)))
+        String(decryptedBytes, StandardCharsets.UTF_8)
+    } catch (e: Exception) { "" }
     }
 
     private fun moonOuterDecode(base64Blob: String): String {
@@ -935,117 +941,99 @@ class AnimeONProvider : MainAPI() {
         } catch (e: Exception) { "" }
     }
 
-    // ── ВИПРАВЛЕНО: Більше немає передчасних return "", резервні кроки запустяться завжди ──
     private suspend fun getMoonFile(iframeUrl: String): String {
-        val cleanUrl = iframeUrl
-            .replace(Regex("[?&]player=[^&]*"), "")
-            .replace("?&", "?")
-            .trimEnd('?', '&')
+    val cleanUrl = iframeUrl
+        .replace(Regex("[?&]player=[^&]*"), "")
+        .replace("?&", "?")
+        .trimEnd('?', '&')
 
-        Log.d(TAG, "GET_MOON_FILE: Очищений iframe URL = $cleanUrl")
-        val html = try {
-            app.get(cleanUrl, headers = mapOf(
-                "User-Agent"      to userAgent,
-                "Accept"          to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
-                "Referer"         to "https://animeon.club/"
-            )).text
-        } catch (e: Exception) {
-            Log.e(TAG, "GET_MOON_FILE: Помилка завантаження HTML iframe", e)
-            ""
-        }
+    Log.d(TAG, "GET_MOON_FILE: Очищений iframe URL = $cleanUrl")
+    val html = try {
+        app.get(cleanUrl, headers = mapOf(
+            "User-Agent"      to userAgent,
+            "Accept"          to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language" to "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Referer"         to "https://animeon.club/"
+        )).text
+    } catch (e: Exception) {
+        Log.e(TAG, "GET_MOON_FILE: Помилка завантаження HTML iframe", e)
+        ""
+    }
 
-        Log.d(TAG, "GET_MOON_FILE: HTML довжина = ${html.length}")
-        if (html.isNotEmpty()) {
-            html.chunked(800).forEachIndexed { i, chunk ->
-                Log.d(TAG, "GET_MOON_FILE: HTML[$i] = $chunk")
-            }
+    if (html.isNotEmpty()) {
+        // Додано \s* для стійкості до мініфікації JS
+        val atobRegex = Regex("""atob\s*\(\s*["']([^"']+)["']\s*\)""")
+        val atobMatch = atobRegex.find(html)?.groupValues?.get(1)
+        
+        if (!atobMatch.isNullOrEmpty()) {
+            val decodedJs = moonOuterDecode(atobMatch)
+            if (decodedJs.isNotEmpty()) {
+                
+                val keyRegex = Regex("""var\s+k\s*=\s*["']([^"']+)["']""")
+                val xorKey = keyRegex.find(decodedJs)?.groupValues?.get(1)
+                
+                if (!xorKey.isNullOrEmpty()) {
+                    Log.d(TAG, "GET_MOON_FILE: xorKey = $xorKey")
+                    val encodedRegex = Regex("""_0xd\s*\(\s*["']([^"']+)["']\s*\)""")
+                    val matches = encodedRegex.findAll(decodedJs).toList()
 
-            val atobRegex = Regex("""atob\(["']([^"']+)["']\)""")
-            val atobMatch = atobRegex.find(html)?.groupValues?.get(1)
-            
-            if (!atobMatch.isNullOrEmpty()) {
-                Log.d(TAG, "GET_MOON_FILE: atobMatch довжина = ${atobMatch.length}")
-                val decodedJs = moonOuterDecode(atobMatch)
-                if (decodedJs.isNotEmpty()) {
-                    Log.d(TAG, "GET_MOON_FILE: decodedJs довжина = ${decodedJs.length}")
-                    decodedJs.chunked(800).forEachIndexed { i, chunk ->
-                        Log.d(TAG, "GET_MOON_FILE: decodedJs[$i] = $chunk")
-                    }
-
-                    val keyRegex = Regex("""var\s+k\s*=\s*["']([^"']+)["']""")
-                    val xorKey = keyRegex.find(decodedJs)?.groupValues?.get(1)
-                    if (!xorKey.isNullOrEmpty()) {
-                        Log.d(TAG, "GET_MOON_FILE: xorKey = $xorKey")
-                        val encodedRegex = Regex("""_0xd\(["']([^"']+)["']\)""")
-                        val matches = encodedRegex.findAll(decodedJs).toList()
-                        Log.d(TAG, "GET_MOON_FILE: Знайдено _0xd викликів = ${matches.size}")
-
-                        val allDecoded = mutableListOf<String>()
-                        for ((idx, match) in matches.withIndex()) {
-                            val decoded = moonDecrypt(match.groupValues[1], xorKey)
+                    val allDecoded = mutableListOf<String>()
+                    for (match in matches) {
+                        val decoded = moonDecrypt(match.groupValues[1], xorKey)
+                        if (decoded.isNotEmpty()) {
                             allDecoded.add(decoded)
-                            Log.d(TAG, "GET_MOON_FILE: _0xd[$idx] = '$decoded'")
-                        }
-
-                        // Крок 1: шукаємо медіа в розшифрованих рядках
-                        for ((idx, decoded) in allDecoded.withIndex()) {
-                            if (decoded.contains(".m3u8") || decoded.contains(".webm") ||
-                                decoded.contains(".mp4")  || decoded.contains("mooncdn") ||
-                                decoded.contains("moonanime.art/content") ||
-                                decoded.contains("s.moonanime.art") ||
-                                decoded.startsWith("[")
-                            ) {
-                                Log.d(TAG, "GET_MOON_FILE: Медіа-рядок [$idx] = $decoded")
-                                return decoded
-                            }
                         }
                     }
 
-                    // Крок 2: шукаємо content URL напряму в JS (не через _0xd)
-                    val contentUrlRegex = Regex("""(https?://s\.moonanime\.art/content/[^\s"'`]+)""")
-                    val contentMatch = contentUrlRegex.find(decodedJs)?.groupValues?.get(1)
-                    if (!contentMatch.isNullOrEmpty()) {
-                        Log.d(TAG, "GET_MOON_FILE: content URL в JS = $contentMatch")
-                        val resolved = resolveMoonContent(contentMatch)
-                        if (!resolved.isNullOrEmpty()) {
-                            Log.d(TAG, "GET_MOON_FILE: резолв = $resolved")
-                            return resolved
+                    // Крок 1: Шукаємо ТІЛЬКИ медіа-посилання, ігноруємо картинки/субтитри
+                    for ((idx, decoded) in allDecoded.withIndex()) {
+                        val isVideoOrPlaylist = decoded.contains(".m3u8") || decoded.contains(".mp4") || decoded.contains(".webm") || decoded.startsWith("[")
+                        val isMoonDomain = decoded.contains("mooncdn") || decoded.contains("moonanime.art/content") || decoded.contains("s.moonanime.art")
+                        // Важливо: відсікаємо картинки та сервісні файли vtt/srt
+                        val isStaticAsset = decoded.contains(Regex("""\.(jpg|jpeg|png|vtt|srt|txt)(\?|$)""", RegexOption.IGNORE_CASE))
+
+                        if ((isVideoOrPlaylist || isMoonDomain) && !isStaticAsset) {
+                            Log.d(TAG, "GET_MOON_FILE: Знайдено медіа-рядок [$idx] = $decoded")
+                            return decoded
                         }
                     }
-                } else {
-                    Log.e(TAG, "GET_MOON_FILE: moonOuterDecode повернув порожній ряд")
                 }
-            } else {
-                Log.d(TAG, "GET_MOON_FILE: Блок atob(...) не знайдено, переходжу до Кроку 3")
-            }
-        }
 
-        // Крок 3: будуємо content URL з hash iframe + перебираємо якості (Тут був баг — сюди код раніше не доходив)
-        val hashRegex = Regex("""/iframe/([a-zA-Z0-9]+)/?$""")
-        val hash = hashRegex.find(cleanUrl)?.groupValues?.get(1)
-        Log.d(TAG, "GET_MOON_FILE: hash з URL = $hash")
-
-        if (!hash.isNullOrEmpty()) {
-            val qualityResults = mutableListOf<String>()
-            for (quality in listOf(1080, 720, 480, 360)) {
-                val contentUrl = "https://s.moonanime.art/content/v/$hash/$quality/"
-                Log.d(TAG, "GET_MOON_FILE: пробуємо $contentUrl")
-                val resolved = resolveMoonContent(contentUrl)
-                if (!resolved.isNullOrEmpty()) {
-                    qualityResults.add("[${quality}p]$resolved")
-                    Log.d(TAG, "GET_MOON_FILE: $quality OK → $resolved")
+                // Крок 2: Резервний пошук контенту напряму
+                val contentUrlRegex = Regex("""(https?://s\.moonanime\.art/content/[^\s"'`]+)""")
+                val contentMatch = contentUrlRegex.find(decodedJs)?.groupValues?.get(1)
+                if (!contentMatch.isNullOrEmpty() && !contentMatch.contains(Regex("""\.(jpg|jpeg|png)$"""))) {
+                    Log.d(TAG, "GET_MOON_FILE: content URL в JS = $contentMatch")
+                    val resolved = resolveMoonContent(contentMatch)
+                    if (!resolved.isNullOrEmpty()) {
+                        return resolved
+                    }
                 }
             }
-            if (qualityResults.isNotEmpty()) {
-                val result = qualityResults.joinToString(",")
-                Log.d(TAG, "GET_MOON_FILE: фінальний результат = $result")
-                return result
+        }
+    }
+
+    // Крок 3: Формування за хешем, якщо JS не зпарсився
+    val hashRegex = Regex("""/iframe/([a-zA-Z0-9]+)/?""")
+    val hash = hashRegex.find(cleanUrl)?.groupValues?.get(1)
+    Log.d(TAG, "GET_MOON_FILE: hash з URL = $hash")
+
+    if (!hash.isNullOrEmpty()) {
+        val qualityResults = mutableListOf<String>()
+        for (quality in listOf(1080, 720, 480, 360)) {
+            val contentUrl = "https://s.moonanime.art/content/v/$hash/$quality/"
+            val resolved = resolveMoonContent(contentUrl)
+            if (!resolved.isNullOrEmpty()) {
+                qualityResults.add("[${quality}p]$resolved")
             }
         }
+        if (qualityResults.isNotEmpty()) {
+            return qualityResults.joinToString(",")
+        }
+    }
 
-        Log.e(TAG, "GET_MOON_FILE: Медіа не знайдено жодним методом")
-        return ""
+    Log.e(TAG, "GET_MOON_FILE: Медіа не знайдено")
+    return ""
     }
 
     private fun extractIntFromString(string: String): Int? {
